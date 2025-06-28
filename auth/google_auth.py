@@ -94,10 +94,7 @@ class GoogleAuthenticator:
             # needs credentials.json file from Google Cloud in %APPDATA%/gspread
             gc = gspread.oauth(scopes=self.scopes)
             logger.info("gspread client authenticated via OAuth.")
+            return gc
         except Exception as e:
             logger.error(f"Failed to authenticate with gspread: {e}", exc_info=True)
             return None
-
-
-google_auth = GoogleAuthenticator()
-google_auth.get_gspread_client()
