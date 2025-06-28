@@ -97,7 +97,6 @@ class ExpenseDataManager:
     def get_monthly_disposable_income(self) -> float:
         """Retrieves and cleans the monthly disposable income from the budget worksheet."""
         try:
-            spreadsheet = self.sheets_service
             budget_ws = self.sheets_service.get_worksheet(BUDGET_WORKSHEET_NAME)
             monthly_income_str = self.sheets_service.get_acell_value(
                 budget_ws.title, "B2"
