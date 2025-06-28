@@ -11,8 +11,6 @@ from gspread_formatting import (
 )
 from loguru import logger
 
-from config import *
-
 
 class GoogleSheetsService:
     """
