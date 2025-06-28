@@ -1,6 +1,11 @@
 import gspread
 from gspread_formatting import (
     CellFormat,
+    GridRange,
+    NumberFormat,
+    TextFormat,
+    Color,
+    BooleanRule,
     get_conditional_format_rules,
     ConditionalFormatRule,
 )
@@ -288,3 +293,223 @@ class GoogleSheetsService:
                 exc_info=True,
             )
             raise
+
+    def format_dashboard_sheet(self, budget_ws, weekly_budget):
+        """Applies formatting to the entire hybrid budget worksheet."""
+        bold_format = CellFormat(textFormat=TextFormat(bold=True))
+        currency_format = CellFormat(
+            numberFormat=NumberFormat(type="NUMBER", pattern='#,##0.00 "PLN"')
+        )
+        percent_format = CellFormat(
+            numberFormat=NumberFormat(type="NUMBER", pattern="0.00%")
+        )
+        integer_format = CellFormat(
+            numberFormat=NumberFormat(type="NUMBER", pattern="0")
+        )
+        light_gray_background = CellFormat(backgroundColor=Color(0.9, 0.9, 0.9))
+
+        self.format_cell_range(budget_ws, "A1:A9", bold_format)
+        self.format_cell_ranges(
+            budget_ws, [("B2:B3", currency_format), ("B5:B9", currency_format)]
+        )
+        self.format_cell_range(budget_ws, "A10:D10", bold_format)
+        self.format_cell_range(
+            budget_ws, "A10:D10", CellFormat(backgroundColor=Color(0.8, 0.8, 0.8))
+        )
+        self.format_cell_ranges(budget_ws, [("C11:D17", currency_format)])
+        for i in range(11, 18, 2):
+            self.format_cell_range(budget_ws, f"A{i}:D{i}", light_gray_background)
+
+        # Right-Hand Side Tables Formatting - Retrieve values once to find table ranges dynamically
+        all_rh_values = budget_ws.get_values("E:E")
+
+        for i, row in enumerate(all_rh_values):
+            if not row:
+                continue
+            header_text = row[0]
+            start_row = i + 1
+
+            if "Category" in header_text:
+                end_row = start_row
+                for j in range(start_row, len(all_rh_values)):
+                    if not all_rh_values[j]:
+                        break
+                    end_row = j + 1
+                self.format_cell_range(
+                    budget_ws, f"E{start_row}:G{start_row}", bold_format
+                )
+                self.format_cell_range(
+                    budget_ws,
+                    f"E{start_row}:G{start_row}",
+                    CellFormat(backgroundColor=Color(0.8, 0.8, 0.8)),
+                )
+                if end_row > start_row:
+                    self.format_cell_range(
+                        budget_ws, f"F{start_row+1}:F{end_row}", currency_format
+                    )
+                    self.format_cell_range(
+                        budget_ws, f"G{start_row+1}:G{end_row}", percent_format
+                    )
+
+            elif "Needs vs. Wants" in header_text:
+                self.format_cell_range(
+                    budget_ws, f"E{start_row}:G{start_row}", bold_format
+                )
+                self.format_cell_range(
+                    budget_ws,
+                    f"E{start_row}:G{start_row}",
+                    CellFormat(backgroundColor=Color(0.8, 0.8, 0.8)),
+                )
+                self.format_cell_range(
+                    budget_ws, f"F{start_row+1}:F{start_row+2}", currency_format
+                )
+                self.format_cell_range(
+                    budget_ws, f"G{start_row+1}:G{start_row+2}", percent_format
+                )
+
+            elif "Top Merchants by Spending" in header_text:
+                end_row = start_row + 5
+                self.format_cell_range(
+                    budget_ws, f"E{start_row}:G{start_row}", bold_format
+                )
+                self.format_cell_range(
+                    budget_ws,
+                    f"E{start_row}:G{start_row}",
+                    CellFormat(backgroundColor=Color(0.8, 0.8, 0.8)),
+                )
+                if end_row > start_row:
+                    self.format_cell_range(
+                        budget_ws, f"F{start_row+1}:F{end_row}", currency_format
+                    )
+                    self.format_cell_range(
+                        budget_ws, f"G{start_row+1}:G{end_row}", integer_format
+                    )
+
+        # Conditional Formatting Rules
+        b6_range = GridRange.from_a1_range("B6", budget_ws)
+        bonus_savings_range = GridRange.from_a1_range("B9", budget_ws)
+
+        rules = [
+            ConditionalFormatRule(
+                ranges=[b6_range],
+                booleanRule=BooleanRule(
+                    "NUMBER_LESS",
+                    [str(weekly_budget * 0.1)],
+                    format=CellFormat(backgroundColor=Color(0.95, 0.7, 0.7)),
+                ),
+            ),
+            ConditionalFormatRule(
+                ranges=[b6_range],
+                booleanRule=BooleanRule(
+                    "NUMBER_BETWEEN",
+                    [str(weekly_budget * 0.1), str(weekly_budget * 0.5)],
+                    format=CellFormat(backgroundColor=Color(1, 0.95, 0.8)),
+                ),
+            ),
+            ConditionalFormatRule(
+                ranges=[b6_range],
+                booleanRule=BooleanRule(
+                    "NUMBER_GREATER",
+                    [str(weekly_budget * 0.5)],
+                    format=CellFormat(backgroundColor=Color(0.8, 0.9, 0.8)),
+                ),
+            ),
+            ConditionalFormatRule(
+                ranges=[bonus_savings_range],
+                booleanRule=BooleanRule(
+                    "NUMBER_GREATER_THAN_EQ",
+                    ["0"],
+                    format=CellFormat(backgroundColor=Color(0.8, 0.9, 0.8)),
+                ),
+            ),
+            ConditionalFormatRule(
+                ranges=[bonus_savings_range],
+                booleanRule=BooleanRule(
+                    "NUMBER_LESS",
+                    ["0"],
+                    format=CellFormat(backgroundColor=Color(0.95, 0.7, 0.7)),
+                ),
+            ),
+        ]
+        self.update_conditional_formats(budget_ws, rules)
+
+        # Column Widths and Freeze Panes
+        self.freeze_panes(budget_ws, rows=10, cols=1)
+
+        column_resize_requests = [
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": budget_ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 0,
+                        "endIndex": 1,
+                    },
+                    "properties": {"pixelSize": 250},
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": budget_ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 1,
+                        "endIndex": 2,
+                    },
+                    "properties": {"pixelSize": 150},
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": budget_ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 2,
+                        "endIndex": 4,
+                    },
+                    "properties": {"pixelSize": 120},
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": budget_ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 4,
+                        "endIndex": 5,
+                    },
+                    "properties": {"pixelSize": 220},
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": budget_ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 5,
+                        "endIndex": 6,
+                    },
+                    "properties": {"pixelSize": 120},
+                    "fields": "pixelSize",
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": budget_ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 6,
+                        "endIndex": 7,
+                    },
+                    "properties": {"pixelSize": 80},
+                    "fields": "pixelSize",
+                }
+            },
+        ]
+        self.batch_update_properties(budget_ws.id, column_resize_requests)
+
+        logger.info("Applied all formatting to the enhanced dashboard.")
