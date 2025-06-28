@@ -3,7 +3,7 @@ import re
 import pandas as pd
 from loguru import logger
 
-from services.google_sheets import GoogleSheetsService  # Import the Sheets service
+from services.google_sheets import GoogleSheetsService
 from config import *
 
 
