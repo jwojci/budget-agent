@@ -1,7 +1,6 @@
 import datetime
 
 from loguru import logger
-import pandas as pd
 from services.google_sheets import GoogleSheetsService
 from data_processing.expense_data import (
     ExpenseDataManager,
