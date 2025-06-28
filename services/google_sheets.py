@@ -5,9 +5,9 @@ from gspread_formatting import (
     NumberFormat,
     TextFormat,
     Color,
-    BooleanRule,
     get_conditional_format_rules,
     ConditionalFormatRule,
+    format_cell_range as gspread_format_cell_range,
 )
 from loguru import logger
 
@@ -235,7 +235,7 @@ class GoogleSheetsService:
     def format_cell_range(self, worksheet, range_name: str, cell_format: CellFormat):
         """Applies formatting to a specific cell range."""
         try:
-            gspread.worksheet.Worksheet.format(worksheet, range_name, cell_format)
+            gspread_format_cell_range(worksheet, range_name, cell_format)
             logger.debug(f"Applied format to '{range_name}' in '{worksheet.title}'.")
         except Exception as e:
             logger.error(
@@ -307,7 +307,6 @@ class GoogleSheetsService:
             numberFormat=NumberFormat(type="NUMBER", pattern="0")
         )
         light_gray_background = CellFormat(backgroundColor=Color(0.9, 0.9, 0.9))
-
         self.format_cell_range(budget_ws, "A1:A9", bold_format)
         self.format_cell_ranges(
             budget_ws, [("B2:B3", currency_format), ("B5:B9", currency_format)]
@@ -389,50 +388,44 @@ class GoogleSheetsService:
         b6_range = GridRange.from_a1_range("B6", budget_ws)
         bonus_savings_range = GridRange.from_a1_range("B9", budget_ws)
 
-        rules = [
-            ConditionalFormatRule(
-                ranges=[b6_range],
-                booleanRule=BooleanRule(
-                    "NUMBER_LESS",
-                    [str(weekly_budget * 0.1)],
-                    format=CellFormat(backgroundColor=Color(0.95, 0.7, 0.7)),
-                ),
-            ),
-            ConditionalFormatRule(
-                ranges=[b6_range],
-                booleanRule=BooleanRule(
-                    "NUMBER_BETWEEN",
-                    [str(weekly_budget * 0.1), str(weekly_budget * 0.5)],
-                    format=CellFormat(backgroundColor=Color(1, 0.95, 0.8)),
-                ),
-            ),
-            ConditionalFormatRule(
-                ranges=[b6_range],
-                booleanRule=BooleanRule(
-                    "NUMBER_GREATER",
-                    [str(weekly_budget * 0.5)],
-                    format=CellFormat(backgroundColor=Color(0.8, 0.9, 0.8)),
-                ),
-            ),
-            ConditionalFormatRule(
-                ranges=[bonus_savings_range],
-                booleanRule=BooleanRule(
-                    "NUMBER_GREATER_THAN_EQ",
-                    ["0"],
-                    format=CellFormat(backgroundColor=Color(0.8, 0.9, 0.8)),
-                ),
-            ),
-            ConditionalFormatRule(
-                ranges=[bonus_savings_range],
-                booleanRule=BooleanRule(
-                    "NUMBER_LESS",
-                    ["0"],
-                    format=CellFormat(backgroundColor=Color(0.95, 0.7, 0.7)),
-                ),
-            ),
-        ]
-        self.update_conditional_formats(budget_ws, rules)
-
+        # rules = [
+        #     ConditionalFormatRule(
+        #         ranges=[b6_range],
+        #         booleanRule=BooleanRule(
+        #             "NUMBER_LESS",
+        #             [str(weekly_budget * 0.1)],
+        #         ),
+        #     ),
+        #     ConditionalFormatRule(
+        #         ranges=[b6_range],
+        #         booleanRule=BooleanRule(
+        #             "NUMBER_BETWEEN",
+        #             [str(weekly_budget * 0.1), str(weekly_budget * 0.5)],
+        #         ),
+        #     ),
+        #     ConditionalFormatRule(
+        #         ranges=[b6_range],
+        #         booleanRule=BooleanRule(
+        #             "NUMBER_GREATER",
+        #             [str(weekly_budget * 0.5)],
+        #         ),
+        #     ),
+        #     ConditionalFormatRule(
+        #         ranges=[bonus_savings_range],
+        #         booleanRule=BooleanRule(
+        #             "NUMBER_GREATER_THAN_EQ",
+        #             ["0"],
+        #         ),
+        #     ),
+        #     ConditionalFormatRule(
+        #         ranges=[bonus_savings_range],
+        #         booleanRule=BooleanRule(
+        #             "NUMBER_LESS",
+        #             ["0"],
+        #         ),
+        #     ),
+        # ]
+        # self.update_conditional_formats(budget_ws, rules)
         # Column Widths and Freeze Panes
         self.freeze_panes(budget_ws, rows=10, cols=1)
 
@@ -510,6 +503,7 @@ class GoogleSheetsService:
                 }
             },
         ]
+
         self.batch_update_properties(budget_ws.id, column_resize_requests)
 
         logger.info("Applied all formatting to the enhanced dashboard.")

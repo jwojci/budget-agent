@@ -4,7 +4,7 @@ from loguru import logger
 from services.google_sheets import GoogleSheetsService
 from data_processing.expense_data import ExpenseDataManager
 from analytics.dashboard_metrics import DashboardMetricsCalculator
-from ..config import *
+from config import *
 
 
 class DashboardUpdater:
@@ -29,32 +29,35 @@ class DashboardUpdater:
         """
         logger.info("Starting dashboard update process...")
         try:
-            # 1. Get Budget Worksheet
+            # 1. Get Budget Worksheet (still needed for formatting later)
+            # Reference config.BUDGET_WORKSHEET_NAME directly
             self.budget_ws = self.sheets_service.get_worksheet(BUDGET_WORKSHEET_NAME)
 
-            # 2. Load Expense Data
+            # 2. Get Monthly Income using ExpenseDataManager
+            monthly_disposable_income = (
+                self.expense_data_manager.get_monthly_disposable_income()
+            )
+            if monthly_disposable_income == 0.0:
+                logger.error("Monthly disposable income is 0. Cannot update dashboard.")
+                return None
+
+            # 3. Load Expense Data
             df = self.expense_data_manager.load_expenses_dataframe()
             if df.empty:
                 logger.warning(
                     "No expense data available to update dashboard. Skipping update."
                 )
                 return None
-
-            # 3. Calculate all metrics
-            metrics = self.metrics_calculator.calculate_all_metrics(df)
+            # 4. Calculate all metrics - PASS THE INCOME HERE
+            metrics = self.metrics_calculator.calculate_all_metrics(
+                df, monthly_disposable_income
+            )
             if not metrics:
                 logger.error("Could not calculate dashboard metrics. Skipping update.")
                 return None
 
-            # 4. Prepare data for all sections
-            summary_data_for_sheet = self.metrics_calculator.prepare_summary_data(
-                metrics
-            )
-            daily_breakdown_header, daily_spending_rows = (
-                self.metrics_calculator.prepare_daily_breakdown_data(metrics)
-            )
-
             # Need to get category types records for prepare_category_and_type_data
+            # Reference config.CATEGORIES_WORKSHEET_NAME directly
             category_types_records = self.sheets_service.get_all_records(
                 CATEGORIES_WORKSHEET_NAME
             )
@@ -68,6 +71,13 @@ class DashboardUpdater:
 
             # 5. Write to the sheet
             self.sheets_service.clear_worksheet(self.budget_ws)
+            summary_data_for_sheet = self.metrics_calculator.prepare_summary_data(
+                metrics
+            )
+            daily_breakdown_header, daily_spending_rows = (
+                self.metrics_calculator.prepare_daily_breakdown_data(metrics)
+            )
+
             main_dashboard_data = (
                 summary_data_for_sheet + daily_breakdown_header + daily_spending_rows
             )
@@ -81,6 +91,7 @@ class DashboardUpdater:
             self.sheets_service.update_cells(
                 self.budget_ws, f"E{needs_wants_start_row}", needs_wants_data_for_sheet
             )
+            logger.debug(f"DUPA 3 {needs_wants_data_for_sheet}")
 
             top_merchants_start_row = (
                 needs_wants_start_row + len(needs_wants_data_for_sheet) + 2
