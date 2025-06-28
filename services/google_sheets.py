@@ -1,12 +1,7 @@
 import gspread
 from gspread_formatting import (
     CellFormat,
-    Color,
-    NumberFormat,
-    TextFormat,
     get_conditional_format_rules,
-    GridRange,
-    BooleanCondition,
     ConditionalFormatRule,
 )
 from loguru import logger
