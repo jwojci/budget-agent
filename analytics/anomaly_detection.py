@@ -4,7 +4,7 @@ from loguru import logger
 import pandas as pd
 from data_processing.expense_data import ExpenseDataManager
 
-from config import *
+import config
 
 
 class AnomalyDetector:
@@ -77,12 +77,15 @@ class AnomalyDetector:
             # Check if we have enough historical data for this category
             if (
                 category in category_stats.index
-                and category_stats.loc[category]["week_count"] >= MINIMUM_WEEKS_OF_DATA
+                and category_stats.loc[category]["week_count"]
+                >= config.MINIMUM_WEEKS_OF_DATA
             ):
                 average_spend = category_stats.loc[category]["avg_spend"]
 
-                is_significant_spend = current_spend > MINIMUM_SPEND_FOR_ALERT
-                is_anomalous = current_spend > (average_spend * ANOMALY_THRESHOLD)
+                is_significant_spend = current_spend > config.MINIMUM_SPEND_FOR_ALERT
+                is_anomalous = current_spend > (
+                    average_spend * config.ANOMALY_THRESHOLD
+                )
 
                 if is_significant_spend and is_anomalous:
                     logger.warning(

@@ -4,7 +4,7 @@ from loguru import logger
 from services.google_sheets import GoogleSheetsService
 from data_processing.expense_data import ExpenseDataManager
 from analytics.dashboard_metrics import DashboardMetricsCalculator
-from config import *
+import config
 
 
 class DashboardUpdater:
@@ -31,7 +31,9 @@ class DashboardUpdater:
         try:
             # 1. Get Budget Worksheet (still needed for formatting later)
             # Reference config.BUDGET_WORKSHEET_NAME directly
-            self.budget_ws = self.sheets_service.get_worksheet(BUDGET_WORKSHEET_NAME)
+            self.budget_ws = self.sheets_service.get_worksheet(
+                config.BUDGET_WORKSHEET_NAME
+            )
 
             # 2. Get Monthly Income using ExpenseDataManager
             monthly_disposable_income = (
@@ -59,7 +61,7 @@ class DashboardUpdater:
             # Need to get category types records for prepare_category_and_type_data
             # Reference config.CATEGORIES_WORKSHEET_NAME directly
             category_types_records = self.sheets_service.get_all_records(
-                CATEGORIES_WORKSHEET_NAME
+                config.CATEGORIES_WORKSHEET_NAME
             )
             category_data_for_sheet, needs_wants_data_for_sheet = (
                 self.metrics_calculator.prepare_category_and_type_data(

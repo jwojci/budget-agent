@@ -3,7 +3,7 @@ import pandas as pd
 from loguru import logger
 import google.generativeai as genai
 
-from config import *
+import config
 
 
 class GeminiAI:
@@ -11,7 +11,7 @@ class GeminiAI:
     Manages interaction with the Gemini AI model for budget analysis and chat.
     """
 
-    def __init__(self, api_key=GEMINI_API_KEY, model_name="gemini-2.5-flash"):
+    def __init__(self, api_key=config.GEMINI_API_KEY, model_name="gemini-2.5-flash"):
         if not api_key:
             logger.error("GEMINI_API_KEY not found. AI features will be unavailable.")
             self.model = None

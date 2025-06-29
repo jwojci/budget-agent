@@ -4,7 +4,7 @@ import pandas as pd
 from loguru import logger
 
 from services.google_sheets import GoogleSheetsService
-from config import *
+import config
 
 
 class ExpenseDataManager:
@@ -22,25 +22,27 @@ class ExpenseDataManager:
         ensuring 'Expense' is numeric and 'Date' is a timezone-naive datetime object.
         """
         try:
-            all_records = self.sheets_service.get_all_records(EXPENSES_WORKSHEET_NAME)
+            all_records = self.sheets_service.get_all_records(
+                config.EXPENSES_WORKSHEET_NAME
+            )
 
             if not all_records:
                 logger.warning(
-                    f"Expenses worksheet '{EXPENSES_WORKSHEET_NAME}' is empty. Returning empty DataFrame."
+                    f"Expenses worksheet '{config.EXPENSES_WORKSHEET_NAME}' is empty. Returning empty DataFrame."
                 )
-                return pd.DataFrame(columns=EXPECTED_EXPENSE_HEADER)
+                return pd.DataFrame(columns=config.EXPECTED_EXPENSE_HEADER)
 
             df = pd.DataFrame(all_records)
 
             # Ensure required columns exist
-            if not all(col in df.columns for col in REQUIRED_DF_COLUMNS):
+            if not all(col in df.columns for col in config.REQUIRED_DF_COLUMNS):
                 missing_cols = [
-                    col for col in REQUIRED_DF_COLUMNS if col not in df.columns
+                    col for col in config.REQUIRED_DF_COLUMNS if col not in df.columns
                 ]
                 logger.error(
                     f"Expenses worksheet is missing one or more required columns: {missing_cols}. Current columns: {df.columns.tolist()}"
                 )
-                return pd.DataFrame(columns=EXPECTED_EXPENSE_HEADER)
+                return pd.DataFrame(columns=config.EXPECTED_EXPENSE_HEADER)
 
             df["Expense"] = pd.to_numeric(df["Expense"], errors="coerce").fillna(0)
             df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.tz_localize(
@@ -48,15 +50,15 @@ class ExpenseDataManager:
             )
 
             logger.info(
-                f"Successfully loaded {len(df)} records from '{EXPENSES_WORKSHEET_NAME}'."
+                f"Successfully loaded {len(df)} records from '{config.EXPENSES_WORKSHEET_NAME}'."
             )
             return df
         except Exception as e:
             logger.error(
-                f"Error loading expenses DataFrame from '{EXPENSES_WORKSHEET_NAME}': {e}",
+                f"Error loading expenses DataFrame from '{config.EXPENSES_WORKSHEET_NAME}': {e}",
                 exc_info=True,
             )
-            return pd.DataFrame(columns=EXPECTED_EXPENSE_HEADER)
+            return pd.DataFrame(columns=config.EXPECTED_EXPENSE_HEADER)
 
     def get_category_data(self) -> tuple[list[dict], list[str], any]:
         """
@@ -64,9 +66,11 @@ class ExpenseDataManager:
         Returns uncategorized keywords, existing categories, and the worksheet object.
         """
         try:
-            categories_ws = self.sheets_service.get_worksheet(CATEGORIES_WORKSHEET_NAME)
+            categories_ws = self.sheets_service.get_worksheet(
+                config.CATEGORIES_WORKSHEET_NAME
+            )
             all_category_data = self.sheets_service.get_all_records(
-                CATEGORIES_WORKSHEET_NAME
+                config.CATEGORIES_WORKSHEET_NAME
             )
 
             uncategorized = [
@@ -89,7 +93,7 @@ class ExpenseDataManager:
             return uncategorized, existing_categories, categories_ws
         except Exception as e:
             logger.error(
-                f"Error getting category data from '{CATEGORIES_WORKSHEET_NAME}': {e}",
+                f"Error getting category data from '{config.CATEGORIES_WORKSHEET_NAME}': {e}",
                 exc_info=True,
             )
             return [], [], None
@@ -97,7 +101,7 @@ class ExpenseDataManager:
     def get_monthly_disposable_income(self) -> float:
         """Retrieves and cleans the monthly disposable income from the budget worksheet."""
         try:
-            budget_ws = self.sheets_service.get_worksheet(BUDGET_WORKSHEET_NAME)
+            budget_ws = self.sheets_service.get_worksheet(config.BUDGET_WORKSHEET_NAME)
             monthly_income_str = self.sheets_service.get_acell_value(
                 budget_ws.title, "B2"
             )  # Pass worksheet title and cell
@@ -117,7 +121,7 @@ class ExpenseDataManager:
             return float(cleaned_income_str)
         except Exception as e:
             logger.error(
-                f"Could not read or parse monthly income from '{BUDGET_WORKSHEET_NAME}' cell B2: {e}",
+                f"Could not read or parse monthly income from '{config.BUDGET_WORKSHEET_NAME}' cell B2: {e}",
                 exc_info=True,
             )
             return 0.0

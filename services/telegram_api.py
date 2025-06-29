@@ -1,7 +1,7 @@
 import telegram
 from loguru import logger
 
-from config import *
+import config
 
 
 class TelegramService:
@@ -9,7 +9,9 @@ class TelegramService:
     Manages sending messages to Telegram.
     """
 
-    def __init__(self, bot_token=TELEGRAM_BOT_TOKEN, chat_id=TELEGRAM_CHAT_ID):
+    def __init__(
+        self, bot_token=config.TELEGRAM_BOT_TOKEN, chat_id=config.TELEGRAM_CHAT_ID
+    ):
         if not bot_token or not chat_id:
             logger.warning(
                 "Telegram bot token or chat ID not set. Telegram messages will be skipped."

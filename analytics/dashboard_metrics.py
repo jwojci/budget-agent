@@ -5,7 +5,7 @@ import pandas as pd
 from loguru import logger
 from services.google_sheets import GoogleSheetsService  # For fetching income
 
-from config import *
+import config
 
 
 class DashboardMetricsCalculator:

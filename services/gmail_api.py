@@ -6,7 +6,7 @@ import re
 from loguru import logger
 from googleapiclient.errors import HttpError
 
-from config import *
+import config
 
 
 class GmailService:
@@ -17,8 +17,8 @@ class GmailService:
 
     def __init__(self, gmail_api_client):
         self.gmail_api_client = gmail_api_client
-        if not os.path.exists(ATTACHMENTS_DIR):
-            os.makedirs(ATTACHMENTS_DIR)
+        if not os.path.exists(config.ATTACHMENTS_DIR):
+            os.makedirs(config.ATTACHMENTS_DIR)
 
     def get_email_ids_for_current_month(self) -> list[str]:
         """Fetches all email IDs from the specified sender for the current month."""
@@ -29,7 +29,7 @@ class GmailService:
             )
             after_date = first_day_of_month.strftime("%Y/%m/%d")
 
-            query = f"from:{EMAIL_SENDER} after:{after_date}"
+            query = f"from:{config.EMAIL_SENDER} after:{after_date}"
             logger.info(f"Searching for emails with query: '{query}'")
 
             messages = []
@@ -53,7 +53,7 @@ class GmailService:
 
             if not messages:
                 logger.info(
-                    f"No new emails from '{EMAIL_SENDER}' found for the current month."
+                    f"No new emails from '{config.EMAIL_SENDER}' found for the current month."
                 )
                 return []
             return [msg["id"] for msg in messages]
@@ -115,7 +115,7 @@ class GmailService:
                 )
                 file_data = base64.urlsafe_b64decode(attachment["data"].encode("UTF-8"))
                 cleaned_filename = filename.replace("Powiadomienie e-mail z ", "")
-                filepath = os.path.join(ATTACHMENTS_DIR, cleaned_filename)
+                filepath = os.path.join(config.ATTACHMENTS_DIR, cleaned_filename)
                 if os.path.exists(filepath):
                     logger.info(f"Skipping attachment {filepath} File exists")
                 else:

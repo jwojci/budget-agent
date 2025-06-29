@@ -8,7 +8,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import gspread
 
-from config import TOKEN_FILE, CREDENTIALS_FILE, SCOPES
+import config
 
 
 class GoogleAuthenticator:
@@ -16,9 +16,9 @@ class GoogleAuthenticator:
 
     def __init__(
         self,
-        token_file=TOKEN_FILE,
-        credentials_file=CREDENTIALS_FILE,
-        scopes=SCOPES,
+        token_file=config.TOKEN_FILE,
+        credentials_file=config.CREDENTIALS_FILE,
+        scopes=config.SCOPES,
     ):
         self.token_file = token_file
         self.credentials_file = credentials_file
