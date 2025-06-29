@@ -4,7 +4,7 @@ from loguru import logger
 import pandas as pd
 from data_processing.expense_data import ExpenseDataManager
 
-from ..config import *
+from config import *
 
 
 class AnomalyDetector:

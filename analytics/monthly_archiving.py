@@ -6,7 +6,7 @@ from data_processing.expense_data import (
     ExpenseDataManager,
 )  # To get monthly income and category spending
 
-from ..config import *
+from config import *
 
 
 class MonthlyArchiver:

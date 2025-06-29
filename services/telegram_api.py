@@ -1,7 +1,7 @@
 import telegram
 from loguru import logger
 
-from ..config import *
+from config import *
 
 
 class TelegramService:
