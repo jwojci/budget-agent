@@ -12,21 +12,19 @@ from data_processing.transaction_parser import TransactionParser
 from analytics.dashboard_metrics import DashboardMetricsCalculator
 from analytics.monthly_archiving import MonthlyArchiver
 from analytics.anomaly_detection import AnomalyDetector
-from analytics.dashboard_updater import DashboardUpdater  # The new updater class
+from analytics.dashboard_updater import DashboardUpdater
 
-# from ai.gemini_ai import GeminiAI
+from ai.gemini_ai import GeminiAI
 
 
-logger.add(config.LOG_FILE)  # Centralized logging to a file
+logger.add(config.LOG_FILE)
 
 
 async def _check_and_fix_expenses_header(sheets_service: GoogleSheetsService):
     """Ensures the expenses worksheet has the correct header."""
     try:
         expenses_ws = sheets_service.get_worksheet(config.EXPENSES_WORKSHEET_NAME)
-        all_values = sheets_service.get_all_values(
-            config.EXPENSES_WORKSHEET_NAME
-        )  # Use service method
+        all_values = sheets_service.get_all_values(config.EXPENSES_WORKSHEET_NAME)
 
         if not all_values or all_values[0] != config.EXPECTED_EXPENSE_HEADER:
             logger.warning(
@@ -65,10 +63,9 @@ async def _run_monthly_archive(
 
 
 async def _run_ai_weekly_digest(
-    sheets_service: GoogleSheetsService,
     expense_data_manager: ExpenseDataManager,
     telegram_service: TelegramService,
-    # gemini_ai: GeminiAI,
+    gemini_ai: GeminiAI,
 ):
     """Generates and sends the AI weekly digest on Mondays."""
     today = datetime.datetime.now()
@@ -80,10 +77,10 @@ async def _run_ai_weekly_digest(
             end_of_last_week = today - datetime.timedelta(days=today.weekday() + 1)
             last_week_df = df[
                 (df["Date"] >= start_of_last_week) & (df["Date"] <= end_of_last_week)
-            ].copy()  # Ensure copy to avoid future warnings
+            ].copy()
 
-            # digest_message = gemini_ai.get_ai_weekly_digest(last_week_df)
-            # await telegram_service.send_message(digest_message, parse_mode="Markdown")
+            digest_message = gemini_ai.get_ai_weekly_digest(last_week_df)
+            await telegram_service.send_message(digest_message, parse_mode="Markdown")
             logger.success("AI Weekly Digest generated and sent.")
         else:
             logger.warning("No expense data available for AI Weekly Digest.")
@@ -94,7 +91,6 @@ async def _run_ai_weekly_digest(
 async def _process_daily_emails(
     gmail_service: GmailService,
     sheets_service: GoogleSheetsService,
-    expense_data_manager: ExpenseDataManager,
     transaction_parser: TransactionParser,
     telegram_service: TelegramService,
 ):
@@ -135,8 +131,8 @@ async def _process_daily_emails(
                     transaction_parser.extract_and_categorize_transaction_details(
                         expenses_raw,
                         attachment_path,
-                        existing_expense_dates,  # Pass existing dates to parser to skip already processed files
-                        all_category_data_for_processing,  # Pass full category map for categorization
+                        existing_expense_dates,
+                        all_category_data_for_processing,
                     )
                 )
                 if new_rows:
@@ -152,7 +148,7 @@ async def _process_daily_emails(
         logger.info(
             f"Inserting {len(all_new_rows)} new transaction rows into '{config.EXPENSES_WORKSHEET_NAME}'..."
         )
-        sheets_service.append_rows(expenses_ws, all_new_rows[::-1])  # Using append_rows
+        sheets_service.append_rows(expenses_ws, all_new_rows[::-1])
         await telegram_service.send_message(
             f"✅ *{len(all_new_rows)} new transactions* have been saved."
         )
@@ -182,9 +178,6 @@ async def _process_daily_emails(
 
 
 async def _run_anomaly_detection_and_dashboard_update(
-    sheets_service: GoogleSheetsService,
-    expense_data_manager: ExpenseDataManager,
-    metrics_calculator: DashboardMetricsCalculator,
     anomaly_detector: AnomalyDetector,
     dashboard_updater: DashboardUpdater,
     telegram_service: TelegramService,
@@ -254,7 +247,6 @@ async def main_scheduled_run():
         expense_data_manager = ExpenseDataManager(sheets_service)
         transaction_parser = TransactionParser()  # Doesn't need sheets_service directly
         metrics_calculator = DashboardMetricsCalculator(sheets_service)
-        monthly_archiver = MonthlyArchiver(sheets_service, expense_data_manager)
         anomaly_detector = AnomalyDetector(expense_data_manager)
         dashboard_updater = DashboardUpdater(
             sheets_service, expense_data_manager, metrics_calculator
@@ -265,20 +257,14 @@ async def main_scheduled_run():
         await _run_monthly_archive(
             sheets_service, expense_data_manager, telegram_service
         )
-        # await _run_ai_weekly_digest(
-        #     sheets_service, expense_data_manager, telegram_service, GeminiAI()
-        # )  # Pass a new instance for weekly digest
+        await _run_ai_weekly_digest(expense_data_manager, telegram_service, GeminiAI())
         await _process_daily_emails(
             gmail_service,
             sheets_service,
-            expense_data_manager,
             transaction_parser,
             telegram_service,
         )
         await _run_anomaly_detection_and_dashboard_update(
-            sheets_service,
-            expense_data_manager,
-            metrics_calculator,
             anomaly_detector,
             dashboard_updater,
             telegram_service,
