@@ -116,9 +116,12 @@ class GmailService:
                 file_data = base64.urlsafe_b64decode(attachment["data"].encode("UTF-8"))
                 cleaned_filename = filename.replace("Powiadomienie e-mail z ", "")
                 filepath = os.path.join(ATTACHMENTS_DIR, cleaned_filename)
-                with open(filepath, "wb") as f:
-                    f.write(file_data)
-                logger.info(f"Saved attachment: {cleaned_filename}")
+                if os.path.exists(filepath):
+                    logger.info(f"Skipping attachment {filepath} File exists")
+                else:
+                    with open(filepath, "wb") as f:
+                        f.write(file_data)
+                    logger.info(f"Saved attachment: {cleaned_filename}")
                 return filepath
             return None
         except HttpError as error:
