@@ -93,7 +93,6 @@ class DashboardUpdater:
             self.sheets_service.update_cells(
                 self.budget_ws, f"E{needs_wants_start_row}", needs_wants_data_for_sheet
             )
-            logger.debug(f"DUPA 3 {needs_wants_data_for_sheet}")
 
             top_merchants_start_row = (
                 needs_wants_start_row + len(needs_wants_data_for_sheet) + 2

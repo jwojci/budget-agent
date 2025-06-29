@@ -161,7 +161,6 @@ class DashboardMetricsCalculator:
         }
         df_month_to_date_processed = df_month_to_date.copy()
         df_month_to_date_processed.to_csv("test.csv")
-        print("DF_MONTH_TO_DATE", df_month_to_date_processed)
         df_month_to_date_processed["Type"] = (
             df_month_to_date_processed["Category"]
             .map(category_to_type_map)
