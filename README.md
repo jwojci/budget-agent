@@ -23,7 +23,6 @@ This project is a robust, automated personal finance management system. It seaml
 * **Top Merchants Analysis**: Identifies and highlights your top spending areas.
 * **Automated Formatting**: Applies advanced GSheets formatting, including conditional formatting for visual budget alerts, precise column sizing, and frozen panes for superior readability.
 
-*Here's a look at the dynamically updated dashboard:*
 
 ![Google Sheets Dashboard Overview](images/budget_4.png)
 *Parsed transactions list.*
@@ -178,7 +177,7 @@ Start this script to keep your Telegram bot running and responsive to commands.
 python bot_runner.py
 ```
 
-# TODO: Dockerize the bot.
+## TODO: Dockerize the bot.
 
 -----
 
