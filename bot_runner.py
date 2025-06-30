@@ -40,10 +40,7 @@ def main():
     # Initialize services
     # Note: GoogleAuthenticator handles its own token management for Gmail/gspread
     # The gspread.oauth() approach uses the user's default browser for auth
-    # For a production bot, a service account (gspread.service_account) is often preferred for gspread
-    # You might want to pass the gspread client from GoogleAuthenticator if you only want one auth method
-    # For now, let's keep gspread.oauth() as per your original code for simplicity,
-    # but be aware it's a separate authentication flow from gmail_api_client.
+    # TODO: For a production bot, a service account (gspread.service_account) is often preferred for gspread
     authenticator = GoogleAuthenticator()
     # The gspread client requires a file-based auth (oauth or service_account)
     # If using service_account, set config.GSPREAD_SERVICE_ACCOUNT_FILE
