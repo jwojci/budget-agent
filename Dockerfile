@@ -32,4 +32,4 @@ RUN mkdir -p /app/attachments
 #
 
 # Command to run the bot when the container launches
-ENTRYPOINT ["./entrypoint.sh"]
+CMD ["python", "bot_runner.py"]

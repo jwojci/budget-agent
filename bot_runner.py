@@ -1,4 +1,5 @@
 import asyncio
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 from telegram.ext import (
     Application,
@@ -27,65 +28,63 @@ from bot.telegram_handlers import (
     SELECTING_CATEGORY,
     SELECTING_TYPE,
 )  # Import states too
+from main import main_scheduled_run
 
 
 # Setup logger for the bot runner specifically
 logger.add(config.LOG_FILE)
 
+app_context = {}
+
+
+async def scheduled_task_wrapper():
+    """
+    Passes the shared app context to the scheduled task.
+    This prevents the task from creating its own duplicate service instances.
+    """
+    logger.info("Scheduler triggered: Running daily check...")
+    await main_scheduled_run(app_context)
+
 
 def main():
-    """Starts the bot to listen for commands and messages."""
-    logger.info("🤖 Starting Telegram bot with AI capabilities...")
+    """Starts the bot, initializes all services, and runs the scheduler."""
+    logger.info("Starting Telegram bot...")
 
     # Initialize services
-    # Note: GoogleAuthenticator handles its own token management for Gmail/gspread
-    # The gspread.oauth() approach uses the user's default browser for auth
-    # TODO: For a production bot, a service account (gspread.service_account) is often preferred for gspread
     authenticator = GoogleAuthenticator()
-    # The gspread client requires a file-based auth (oauth or service_account)
-    # If using service_account, set config.GSPREAD_SERVICE_ACCOUNT_FILE
-    # If using oauth, it will look for token.json or prompt for browser auth.
     gspread_client = authenticator.get_gspread_client()
     if not gspread_client:
         logger.critical("Failed to initialize gspread client. Exiting bot.")
         return
 
     sheets_service = GoogleSheetsService(gspread_client)
-
     try:
         sheets_service.open_spreadsheet(config.SPREADSHEET_NAME)
     except Exception as e:
-        logger.critical(
-            f"🔥 Could not open the Google Sheet '{config.SPREADSHEET_NAME}' for the bot. Halting. Error: {e}"
-        )
-        telegram_service = TelegramService()  # Initialize just to send error message
+        logger.critical(f"Could not open Google Sheet. Exiting. Error: {e}")
         asyncio.run(
-            telegram_service.send_message(
-                f"🔥 *Bot Startup Error*\nCould not open the Google Sheet: {config.SPREADSHEET_NAME}. Please check permissions and spelling.",
-                parse_mode="Markdown",
+            TelegramService().send_message(
+                "🔥 Bot failed to start: Could not open Google Sheet."
             )
         )
         return
 
-    telegram_service = TelegramService()  # Telegram bot token is from config
-    gemini_ai = GeminiAI()  # Gemini API key is from config
+    # Populate app context
+    app_context["sheets_service"] = sheets_service
+    app_context["expense_data_manager"] = ExpenseDataManager(sheets_service)
+    app_context["metrics_calculator"] = DashboardMetricsCalculator(sheets_service)
+    app_context["telegram_service"] = TelegramService()
+    app_context["bot_context"] = {}
+    # The AI agent needs the context to access its tools
+    app_context["gemini_ai"] = GeminiAI(app_context)
 
-    # Initialize data processing and analytics components
-    expense_data_manager = ExpenseDataManager(sheets_service)
-    metrics_calculator = DashboardMetricsCalculator(
-        sheets_service
-    )  # Metrics depends on sheet income
-    transaction_parser = (
-        TransactionParser()
-    )  # Doesn't directly need sheets_service here
-
-    # Initialize Telegram Handlers with all necessary dependencies
+    # The bot handlers get the services they need from the central context.
     bot_handlers = TelegramBotHandlers(
-        sheets_service=sheets_service,
-        telegram_service=telegram_service,
-        expense_data_manager=expense_data_manager,
-        metrics_calculator=metrics_calculator,
-        gemini_ai=gemini_ai,
+        sheets_service=app_context["sheets_service"],
+        telegram_service=app_context["telegram_service"],
+        expense_data_manager=app_context["expense_data_manager"],
+        metrics_calculator=app_context["metrics_calculator"],
+        gemini_ai=app_context["gemini_ai"],
     )
 
     application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
@@ -115,11 +114,18 @@ def main():
     application.add_handler(CommandHandler("top5", bot_handlers.top5_command))
     application.add_handler(CommandHandler("newchat", bot_handlers.new_chat_command))
     application.add_handler(conv_handler)  # Add the conversation handler
-
     # Add a handler for all text messages that are NOT commands
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, bot_handlers.handle_text_query)
     )
+
+    # --- Setup the scheduler ---
+    scheduler = AsyncIOScheduler(timezone="Europe/Warsaw")
+    scheduler.add_job(
+        scheduled_task_wrapper, "cron", hour=10, minute=3, name="Daily Financial Check"
+    )
+    scheduler.start()
+    logger.info("Scheduler started for 10:03 AM daily run.")
 
     logger.info("Bot is now polling for commands and messages...")
     application.run_polling()
