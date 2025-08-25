@@ -28,7 +28,7 @@ from bot.telegram_handlers import (
     SELECTING_CATEGORY,
     SELECTING_TYPE,
 )  # Import states too
-from analytics.scheduled_jobs import ScheduledJobs
+from analytics.daily_task_runner import DailyTaskRunner
 
 
 # Setup logger for the bot runner specifically
@@ -58,8 +58,11 @@ def main():
         app_context["telegram_service"] = TelegramService()
         app_context["gemini_ai"] = GeminiAI(app_context)
 
+        application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
+        app_context["application"] = application
+
         # --- NEW: Initialize the jobs coordinator with the context ---
-        app_context["scheduled_jobs"] = ScheduledJobs(app_context)
+        app_context["scheduled_jobs"] = DailyTaskRunner(app_context)
 
     except Exception as e:
         logger.critical(f"CRITICAL FAILURE during initial setup: {e}", exc_info=True)
@@ -75,8 +78,6 @@ def main():
         metrics_calculator=app_context["metrics_calculator"],
         gemini_ai=app_context["gemini_ai"],
     )
-
-    application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
 
     # --- Setup ConversationHandler for categorization ---
     conv_handler = ConversationHandler(

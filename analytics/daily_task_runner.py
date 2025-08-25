@@ -149,59 +149,76 @@ class DailyTaskRunner:
 
         logger.info("Daily email processing complete.")
 
+    async def _run_anomaly_detection_and_dashboard_update(self):
+        """Runs anomaly detection and updates the budget dashboard."""
+        logger.info("Running anomaly detection and dashboard update...")
 
-async def _run_anomaly_detection_and_dashboard_update(self):
-    """Runs anomaly detection and updates the budget dashboard."""
-    logger.info("Running anomaly detection and dashboard update...")
-
-    # Run anomaly detection
-    anomaly_messages = self.anomaly_detector.check_for_spending_anomalies()
-    for msg in anomaly_messages or []:
-        await self.telegram_service.send_message(msg, parse_mode="Markdown")
-    logger.info(
-        f"Sent {len(anomaly_messages)} anomaly alerts."
-        if anomaly_messages
-        else "No anomalies detected."
-    )
-
-    # Update dashboard
-    logger.info("Updating dashboard...")
-    dashboard_data = self.dashboard_updater.update_dashboard()
-    remaining = dashboard_data.get("remaining_weekly", 0) if dashboard_data else 0
-    safe_to_spend = (
-        dashboard_data.get("safe_to_spend_today", 0) if dashboard_data else 0
-    )
-
-    message = (
-        (
-            f"🏁 *Script Finished*\nDashboard updated.\n\n"
-            f"💰 Weekly remaining: *{remaining:,.2f} PLN*\n"
-            f"💡 Safe to spend today: *{safe_to_spend:,.2f} PLN*"
+        # Run anomaly detection
+        anomaly_messages = self.anomaly_detector.check_for_spending_anomalies()
+        for msg in anomaly_messages or []:
+            await self.telegram_service.send_message(msg, parse_mode="Markdown")
+        logger.info(
+            f"Sent {len(anomaly_messages)} anomaly alerts."
+            if anomaly_messages
+            else "No anomalies detected."
         )
-        if dashboard_data
-        else "🏁 *Script Finished*\nDashboard updated, but summary data unavailable."
-    )
 
-    await self.telegram_service.send_message(message, parse_mode="Markdown")
-    logger.info("Dashboard update complete.")
+        # Update dashboard
+        logger.info("Updating dashboard...")
+        dashboard_data = self.dashboard_updater.update_dashboard()
+        remaining = dashboard_data.get("remaining_weekly", 0) if dashboard_data else 0
+        safe_to_spend = (
+            dashboard_data.get("safe_to_spend_today", 0) if dashboard_data else 0
+        )
 
-    async def _run_ai_weekly_digest(app_context: dict):
-        """Sends a weekly financial digest on Mondays."""
+        message = (
+            (
+                f"🏁 *Script Finished*\nDashboard updated.\n\n"
+                f"💰 Weekly remaining: *{remaining:,.2f} PLN*\n"
+                f"💡 Safe to spend today: *{safe_to_spend:,.2f} PLN*"
+            )
+            if dashboard_data
+            else "🏁 *Script Finished*\nDashboard updated, but summary data unavailable."
+        )
+
+        await self.telegram_service.send_message(message, parse_mode="Markdown")
+        logger.info("Dashboard update complete.")
+
+    async def _run_ai_weekly_digest(self):
+        """Generates and sends weekly financial digest on Mondays, updating main chat context."""
         if datetime.datetime.now().weekday() != 0:  # 0 is Monday
             return
 
-        logger.info("Generating AI weekly digest...")
+        logger.info("Generating weekly digest...")
 
-        gemini_ai = app_context["gemini_ai"]
-        telegram_service = app_context["telegram_service"]
-        chat_session = app_context.get("ai_chat_session") or gemini_ai.start_new_chat()
-        app_context["ai_chat_session"] = chat_session
+        try:
+            # Create temporary session for digest
+            temp_session = self.gemini_ai.start_new_chat()
+            if not temp_session:
+                logger.error("Failed to start AI session for digest.")
+                return
 
-        digest_text = await asyncio.to_thread(
-            gemini_ai.send_chat_message,
-            chat_session,
-            "Generate the weekly financial digest.",
-        )
+            # Generate digest
+            digest_text = (
+                await asyncio.to_thread(
+                    temp_session.send_message,
+                    "Generate weekly financial digest based on last week's data.",
+                )
+            ).text
 
-        await telegram_service.send_message(digest_text, parse_mode="Markdown")
-        logger.info("Weekly digest sent.")
+            # Send digest to user
+            await self.telegram_service.send_message(digest_text, parse_mode="Markdown")
+
+            # Update main chat session
+            chat_id = int(config.TELEGRAM_CHAT_ID)
+            main_session = (
+                self.application.chat_data[chat_id].get("ai_chat_session")
+                or self.gemini_ai.start_new_chat()
+            )
+            main_session.history = temp_session.history
+            self.application.chat_data[chat_id]["ai_chat_session"] = main_session
+
+            logger.info("Weekly digest sent and chat context updated.")
+
+        except Exception as e:
+            logger.error(f"Failed to generate digest: {e}")

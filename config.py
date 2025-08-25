@@ -20,6 +20,12 @@ BUDGET_WORKSHEET_NAME = "Budget"
 CATEGORIES_WORKSHEET_NAME = "Categories"
 HISTORY_WORKSHEET_NAME = "History"  # Added for clarity in MonthlyArchiver
 
+# --- Google Sheets Named Ranges ---
+# These names must match the named ranges defined in the spreadsheet.
+NR_MONTHLY_INCOME = "MonthlyIncome"
+NR_BUDGET_SUMMARY = "BudgetSummary"
+NR_DASHBOARD_SIDEPANEL = "DashboardSidePanel"
+
 # Expected header for Expenses worksheet
 EXPECTED_EXPENSE_HEADER = [
     "Time",
