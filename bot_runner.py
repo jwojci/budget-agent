@@ -28,57 +28,46 @@ from bot.telegram_handlers import (
     SELECTING_CATEGORY,
     SELECTING_TYPE,
 )  # Import states too
-from main import main_scheduled_run
+from analytics.scheduled_jobs import ScheduledJobs
 
 
 # Setup logger for the bot runner specifically
 logger.add(config.LOG_FILE)
 
-app_context = {}
-
-
-async def scheduled_task_wrapper():
-    """
-    Passes the shared app context to the scheduled task.
-    This prevents the task from creating its own duplicate service instances.
-    """
-    logger.info("Scheduler triggered: Running daily check...")
-    await main_scheduled_run(app_context)
-
 
 def main():
     """Starts the bot, initializes all services, and runs the scheduler."""
-    logger.info("Starting Telegram bot...")
+    logger.info("Starting Budget Bot application...")
 
-    # Initialize services
-    authenticator = GoogleAuthenticator()
-    gspread_client = authenticator.get_gspread_client()
-    if not gspread_client:
-        logger.critical("Failed to initialize gspread client. Exiting bot.")
-        return
+    app_context = {}
 
-    sheets_service = GoogleSheetsService(gspread_client)
+    # --- Initialize all services and context ONCE ---
     try:
+        authenticator = GoogleAuthenticator()
+        gspread_client = authenticator.get_gspread_client()
+        if not gspread_client:
+            raise ConnectionError("Failed to initialize gspread client.")
+
+        sheets_service = GoogleSheetsService(gspread_client)
         sheets_service.open_spreadsheet(config.SPREADSHEET_NAME)
+
+        # Populate app context with shared services
+        app_context["sheets_service"] = sheets_service
+        app_context["expense_data_manager"] = ExpenseDataManager(sheets_service)
+        app_context["metrics_calculator"] = DashboardMetricsCalculator(sheets_service)
+        app_context["telegram_service"] = TelegramService()
+        app_context["gemini_ai"] = GeminiAI(app_context)
+
+        # --- NEW: Initialize the jobs coordinator with the context ---
+        app_context["scheduled_jobs"] = ScheduledJobs(app_context)
+
     except Exception as e:
-        logger.critical(f"Could not open Google Sheet. Exiting. Error: {e}")
-        asyncio.run(
-            TelegramService().send_message(
-                "🔥 Bot failed to start: Could not open Google Sheet."
-            )
-        )
+        logger.critical(f"CRITICAL FAILURE during initial setup: {e}", exc_info=True)
+        # Attempt to send a startup failure message
+        asyncio.run(TelegramService().send_message(f"🔥 Bot failed to start: {e}"))
         return
 
-    # Populate app context
-    app_context["sheets_service"] = sheets_service
-    app_context["expense_data_manager"] = ExpenseDataManager(sheets_service)
-    app_context["metrics_calculator"] = DashboardMetricsCalculator(sheets_service)
-    app_context["telegram_service"] = TelegramService()
-    app_context["bot_context"] = {}
-    # The AI agent needs the context to access its tools
-    app_context["gemini_ai"] = GeminiAI(app_context)
-
-    # The bot handlers get the services they need from the central context.
+    # --- Bot handlers setup (remains the same) ---
     bot_handlers = TelegramBotHandlers(
         sheets_service=app_context["sheets_service"],
         telegram_service=app_context["telegram_service"],
@@ -119,15 +108,21 @@ def main():
         MessageHandler(filters.TEXT & ~filters.COMMAND, bot_handlers.handle_text_query)
     )
 
-    # --- Setup the scheduler ---
+    # --- Setup the scheduler (now much cleaner) ---
     scheduler = AsyncIOScheduler(timezone="Europe/Warsaw")
+    job_runner = app_context["scheduled_jobs"]  # Get the instance from the context
+
     scheduler.add_job(
-        scheduled_task_wrapper, "cron", hour=10, minute=3, name="Daily Financial Check"
+        job_runner.run_daily_tasks,
+        "cron",
+        hour=10,
+        minute=3,
+        name="Daily Financial Check",
     )
     scheduler.start()
-    logger.info("Scheduler started for 10:03 AM daily run.")
+    logger.info("Scheduler started successfully.")
 
-    logger.info("Bot is now polling for commands and messages...")
+    logger.info("Bot is now polling for messages...")
     application.run_polling()
 
 
