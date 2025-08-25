@@ -10,6 +10,7 @@ LOG_FILE = "app.log"  # Centralized log file name
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
 ]
 
 # --- Google Sheets Config ---

@@ -50,7 +50,7 @@ class TelegramService:
                     exc_info=True,
                 )
         except Exception as e:
-            logger.error(f"Failed to send Telegram message: {e}", exc_info=True)
+            logger.error(f"Failed to send Telegram message: {e}")
 
     def format_summary_for_telegram(self, summary_data: dict) -> str:
         """Formats the monthly summary data into a nice Telegram message."""

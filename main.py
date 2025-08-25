@@ -219,7 +219,7 @@ async def main_scheduled_run():
     # await telegram_service.send_message(
     #     "🚀 *Budget Script Started*\nRunning daily financial check..."
     # )
-
+    telegram_service = TelegramService()  # Global instance, can be passed around
     try:
         # --- Authentication and Service Initialization ---
         authenticator = GoogleAuthenticator()
@@ -242,7 +242,6 @@ async def main_scheduled_run():
             )
             return  # Stop execution if the sheet can't be opened
         gmail_service = GmailService(gmail_api_client)
-        telegram_service = TelegramService()  # Global instance, can be passed around
 
         expense_data_manager = ExpenseDataManager(sheets_service)
         transaction_parser = TransactionParser()  # Doesn't need sheets_service directly

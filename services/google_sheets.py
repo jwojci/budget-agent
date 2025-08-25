@@ -26,7 +26,12 @@ class GoogleSheetsService:
     def open_spreadsheet(self, spreadsheet_name: str):
         """Opens the specified spreadsheet and stores it."""
         try:
-            self.spreadsheet = self.gspread_client.open(spreadsheet_name)
+            logger.debug("whatup")
+            try:
+                self.spreadsheet = self.gspread_client.open(spreadsheet_name)
+            except Exception as e:
+                logger.debug(f"{e}")
+            logger.debug("whatdown")
             logger.info(f"Successfully opened spreadsheet: '{spreadsheet_name}'")
             return self.spreadsheet
         except gspread.exceptions.SpreadsheetNotFound:

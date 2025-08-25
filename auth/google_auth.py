@@ -89,11 +89,13 @@ class GoogleAuthenticator:
 
     def get_gspread_client(self):
         """Returns an authenticated gspread client for Google Sheets."""
+        creds = self.get_creds()
+        if not creds:
+            logger.error("Could not get credentials for gspread client.")
+            return None
         try:
-            # gspread.oauth() manages its own authentication flow
-            # needs credentials.json file from Google Cloud in %APPDATA%/gspread
-            gc = gspread.oauth(scopes=self.scopes)
-            logger.info("gspread client authenticated via OAuth.")
+            gc = gspread.Client(auth=creds)
+            logger.info("gspread client authenticated.")
             return gc
         except Exception as e:
             logger.error(f"Failed to authenticate with gspread: {e}", exc_info=True)
