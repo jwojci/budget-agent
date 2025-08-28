@@ -1,18 +1,12 @@
 import asyncio
-import datetime
 
-import pandas as pd
 from loguru import logger
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-import config
 from services.google_sheets import GoogleSheetsService
 from services.telegram_api import TelegramService
 from data_processing.expense_data import ExpenseDataManager
-from data_processing.transaction_parser import (
-    TransactionParser,
-)  # Used for categorization update
 from analytics.dashboard_metrics import DashboardMetricsCalculator
 from ai.gemini_ai import GeminiAI
 
@@ -38,7 +32,6 @@ class TelegramBotHandlers:
         self.expense_data_manager = expense_data_manager
         self.metrics_calculator = metrics_calculator
         self.gemini_ai = gemini_ai
-        self.transaction_parser = TransactionParser()  # Categorization needs this
 
     async def _create_new_ai_session(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE

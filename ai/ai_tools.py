@@ -1,7 +1,30 @@
 import pandas as pd
+from typing import Any
 from datetime import datetime, timedelta
 
+from pydantic import BaseModel, Field
+
 import config
+
+
+class Filter(BaseModel):
+    """A model for filtering the DataFrame."""
+
+    column: str = Field(..., description="The DataFrame column to filter on.")
+    operator: str = Field(
+        ..., description="The comparison operator (e.g., '==', '>', '<=', 'in')."
+    )
+    value: Any = Field(..., description="The value to compare against.")
+
+
+class Aggregation(BaseModel):
+    """A model for defining an aggregation operation."""
+
+    column: str = Field(..., description="The column to aggregate.")
+    function: str = Field(
+        ...,
+        description="The aggregation function to apply (e.g., 'sum', 'mean', 'count').",
+    )
 
 
 class AgentTools:
@@ -90,7 +113,7 @@ class AgentTools:
         except Exception as e:
             return f"An error occurred while trying to categorize '{merchant_name}'."
 
-    def generate_weekly_digest(self) -> str:
+    def get_weekly_spending_data(self) -> str:
         """
         Analyzes the previous week's spending and asks the AI to generate a short, insightful, and encouraging summary.
         """
@@ -121,66 +144,66 @@ class AgentTools:
             f"- Top Merchant: {top_merchant}\n"
         )
 
-    def get_filtered_aggregated_data(
-        self,
-        filters: list[dict[str, any]] | None = None,
-        group_by: list[str] | None = None,
-        aggregation: dict[str, str] | None = None,
-        sort_by: str | None = None,
-        ascending: bool = False,
-        head: int = 10,
-    ) -> str:
-        """
-        Safely queries the transaction DataFrame.
-        This tool allows for filtering, grouping, and aggregating data.
+    # def get_filtered_aggregated_data(
+    #     self,
+    #     filters: list[Filter] | None = None,
+    #     group_by: list[str] | None = None,
+    #     aggregations: dict[str, str] | None = None,
+    #     sort_by: str | None = None,
+    #     ascending: bool = False,
+    #     head: int = 10,
+    # ) -> str:
+    #     """
+    #     Safely queries the transaction DataFrame.
+    #     This tool allows for filtering, grouping, and aggregating data.
 
-        Args:
-            filters (Optional[List[Dict]]): List of filters. Each dict has 'column', 'operator', 'value'.
-                Example: [{'column': 'Category', 'operator': '==', 'value': 'Groceries'}]
-                Supported operators: '==', '!=', '>', '<', '>=', '<=', 'in', 'not in'.
-            group_by (Optional[List[str]]): Column(s) to group by. Example: ['Category', 'Description']
-            aggregation (Optional[Dict[str, str]]): Aggregation function to apply. Example: {'Expense': 'sum'}
-            sort_by (Optional[str]): Column to sort the final result by.
-            ascending (bool): Sort order. Defaults to False (descending).
-            head (int): Number of top results to return.
-        """
-        try:
-            df = self.expense_data_manager.load_expenses_dataframe()
+    #     Args:
+    #         filters (Optional[List[Dict]]): List of filters. Each dict has 'column', 'operator', 'value'.
+    #             Example: [{'column': 'Category', 'operator': '==', 'value': 'Groceries'}]
+    #             Supported operators: '==', '!=', '>', '<', '>=', '<=', 'in', 'not in'.
+    #         group_by (Optional[List[str]]): Column(s) to group by. Example: ['Category', 'Description']
+    #         aggregations (Optional[Dict[str, str]]): Aggregation functions to apply. Example: {'Expense': 'sum'}
+    #         sort_by (Optional[str]): Column to sort the final result by.
+    #         ascending (bool): Sort order. Defaults to False (descending).
+    #         head (int): Number of top results to return.
+    #     """
+    #     try:
+    #         df = self.expense_data_manager.load_expenses_dataframe()
 
-            # --- apply filters ---
-            if filters:
-                for f in filters:
-                    col, op, val = f["column"], f["operator"], f["value"]
-                    if col not in df.columns:
-                        continue
-                    if op == "==":
-                        df = df[df[col] == val]
-                    elif op == "!=":
-                        df = df[df[col] != val]
-                    elif op == ">":
-                        df = df[df[col] > val]
-                    elif op == "<":
-                        df = df[df[col] < val]
-                    elif op == ">=":
-                        df = df[df[col] >= val]
-                    elif op == "<=":
-                        df = df[df[col] <= val]
-                    elif op == "in":
-                        df = df[df[col].isin(val)]
-                    elif op == "not in":
-                        df = df[~df[col].isin(val)]
+    #         # --- apply filters ---
+    #         if filters:
+    #             for f in filters:
+    #                 col, op, val = f["column"], f["operator"], f["value"]
+    #                 if col not in df.columns:
+    #                     continue
+    #                 if op == "==":
+    #                     df = df[df[col] == val]
+    #                 elif op == "!=":
+    #                     df = df[df[col] != val]
+    #                 elif op == ">":
+    #                     df = df[df[col] > val]
+    #                 elif op == "<":
+    #                     df = df[df[col] < val]
+    #                 elif op == ">=":
+    #                     df = df[df[col] >= val]
+    #                 elif op == "<=":
+    #                     df = df[df[col] <= val]
+    #                 elif op == "in":
+    #                     df = df[df[col].isin(val)]
+    #                 elif op == "not in":
+    #                     df = df[~df[col].isin(val)]
 
-            # --- apply grouping and aggregation ---
-            if group_by and aggregation:
-                result_df = df.groupby(group_by).agg(aggregation)
-            else:
-                result_df = df
+    #         # --- apply grouping and aggregation ---
+    #         if group_by and aggregations:
+    #             result_df = df.groupby(group_by).agg(aggregations)
+    #         else:
+    #             result_df = df
 
-            # --- apply sorting ---
-            if sort_by and sort_by in result_df.columns:
-                result_df = result_df.sort_values(by=sort_by, ascending=ascending)
+    #         # --- apply sorting ---
+    #         if sort_by and sort_by in result_df.columns:
+    #             result_df = result_df.sort_values(by=sort_by, ascending=ascending)
 
-            return result_df.head(head).to_string()
+    #         return result_df.head(head).to_string()
 
-        except Exception as e:
-            return f"Error executing query: {e}"
+    #     except Exception as e:
+    #         return f"Error executing query: {e}"

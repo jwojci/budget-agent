@@ -4,7 +4,7 @@ from loguru import logger
 
 import config
 from auth.google_auth import GoogleAuthenticator
-from data_processing.transaction_parser import TransactionParser
+from data_processing.transaction_parser import get_parser
 from services.gmail_api import GmailService
 from analytics.dashboard_updater import DashboardUpdater
 from analytics.monthly_archiving import MonthlyArchiver
@@ -25,7 +25,6 @@ class DailyTaskRunner:
             if not gmail_api_client:
                 raise ConnectionError("Failed to get Gmail client.")
             self.gmail_service = GmailService(gmail_api_client)
-            self.transaction_parser = TransactionParser()
             self.dashboard_updater = DashboardUpdater(
                 self.sheets_service,
                 self.expense_data_manager,
@@ -92,47 +91,61 @@ class DailyTaskRunner:
                 await self.telegram_service.send_message(summary_message)
 
     async def _process_daily_emails(self):
-        """Fetches and processes daily expense emails."""
+        """Fetches and processes daily expense emails using the parser factory."""
         logger.info("Processing daily emails...")
 
+        # Get parser
+        parser = get_parser(config.EMAIL_SENDER)
+        if not parser:
+            logger.error(f"No parser for '{config.EMAIL_SENDER}'.")
+            await self.telegram_service.send_message(
+                f"⚠️ Parser Error: No parser for '{config.EMAIL_SENDER}'."
+            )
+            return
+
+        # Setup worksheets and data
         expenses_ws = self.sheets_service.get_worksheet(config.EXPENSES_WORKSHEET_NAME)
         categories_ws = self.sheets_service.get_worksheet(
             config.CATEGORIES_WORKSHEET_NAME
         )
-
         existing_dates = set(
             self.sheets_service.get_col_values(config.EXPENSES_WORKSHEET_NAME, 6)[1:]
         )
-        categories = self.sheets_service.get_all_records(
+        category_records = self.sheets_service.get_all_records(
             config.CATEGORIES_WORKSHEET_NAME
         )
         existing_keywords = {
-            cat["Keyword"].lower() for cat in categories if cat.get("Keyword")
+            rec.get("Keyword", "").lower()
+            for rec in category_records
+            if rec.get("Keyword")
         }
 
         new_rows, new_keywords = [], set()
-        for email_id in reversed(self.gmail_service.get_email_ids_for_current_month()):
+        for email_id in reversed(
+            self.gmail_service.get_email_ids_for_current_month() or []
+        ):
             attachment_path = self.gmail_service.save_attachments_from_message(email_id)
             if not attachment_path:
-                logger.warning(f"No attachment for email {email_id}. Skipping.")
+                logger.warning(f"No attachment for email {email_id}.")
                 continue
 
-            expenses = self.transaction_parser.parse_expenses_from_html(attachment_path)
-            rows, keywords = (
-                self.transaction_parser.extract_and_categorize_transaction_details(
-                    expenses, attachment_path, existing_dates, categories
-                )
+            # Parse and process transactions
+            raw_transactions = parser.parse_html(attachment_path)
+            rows, keywords = parser.process_transactions(
+                raw_transactions, attachment_path, existing_dates, category_records
             )
             new_rows.extend(rows)
             new_keywords.update(keywords)
 
+        # Update sheets
         if new_rows:
-            logger.info(f"Adding {len(new_rows)} new transactions...")
-            self.sheets_service.append_rows(expenses_ws, new_rows[::-1])
+            logger.info(f"Adding {len(new_rows)} transactions...")
+            self.sheets_service.append_rows(expenses_ws, new_rows)
             await self.telegram_service.send_message(
-                f"✅ {len(new_rows)} new transactions saved."
+                f"✅ {len(new_rows)} transactions saved."
             )
 
+        # Handle new keywords
         truly_new_keywords = [
             kw for kw in new_keywords if kw.lower() not in existing_keywords
         ]
@@ -144,10 +157,10 @@ class DailyTaskRunner:
             await self.telegram_service.send_message(
                 f"🤔 New Keywords Found\nPlease categorize:\n- "
                 + "\n- ".join(truly_new_keywords)
-                + "\n\nUse /categorize in the bot."
+                + "\n\nUse /categorize."
             )
 
-        logger.info("Daily email processing complete.")
+        logger.info("Email processing complete.")
 
     async def _run_anomaly_detection_and_dashboard_update(self):
         """Runs anomaly detection and updates the budget dashboard."""
