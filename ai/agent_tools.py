@@ -1,4 +1,6 @@
+import operator as op
 from datetime import datetime, timedelta
+
 import pandas as pd
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
@@ -105,7 +107,6 @@ def create_agent_tools(app_context):
         head: int = 10,
     ) -> str:
         """Queries DataFrame with filters, grouping, and aggregations."""
-        import operator as op
 
         ops = {
             "==": op.eq,
