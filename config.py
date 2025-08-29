@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # --- File Paths ---
 TOKEN_FILE = "token.json"
@@ -11,6 +14,8 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/cloud-platform",
+    "https://www.googleapis.com/auth/generative-language.retriever",
 ]
 
 # --- Google Sheets Config ---
@@ -57,3 +62,5 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ANOMALY_THRESHOLD = 2.0
 MINIMUM_SPEND_FOR_ALERT = 50.0
 MINIMUM_WEEKS_OF_DATA = 4
+
+MONTHLY_ARCHIVE_RUN_DAYS = 4  # Run archiving on the first 4 days of the month
