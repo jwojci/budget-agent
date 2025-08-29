@@ -8,7 +8,7 @@ from services.google_sheets import GoogleSheetsService
 from services.telegram_api import TelegramService
 from data_processing.expense_data import ExpenseDataManager
 from analytics.dashboard_metrics import DashboardMetricsCalculator
-from ai.gemini_ai import GeminiAI
+from ai.agent import BudgetAgent
 
 # Conversation States for /categorize
 SELECTING_CATEGORY, SELECTING_TYPE = range(2)
@@ -25,34 +25,28 @@ class TelegramBotHandlers:
         telegram_service: TelegramService,
         expense_data_manager: ExpenseDataManager,
         metrics_calculator: DashboardMetricsCalculator,
-        gemini_ai: GeminiAI,
+        budget_agent: BudgetAgent,
     ):
         self.sheets_service = sheets_service
         self.telegram_service = telegram_service
         self.expense_data_manager = expense_data_manager
         self.metrics_calculator = metrics_calculator
-        self.gemini_ai = gemini_ai
+        self.budget_agent_prototype = budget_agent
 
-    async def _create_new_ai_session(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        """Helper to initialize a new AI agent chat session."""
-        try:
-            # This is now super simple
-            chat_session = self.gemini_ai.start_new_chat()
-            if chat_session:
-                context.chat_data["ai_chat_session"] = chat_session
-                logger.info("New AI Agent chat session started.")
-                return chat_session
-            else:
-                await update.message.reply_text(
-                    "Sorry, the AI model could not be initialized."
-                )
-                return None
-        except Exception as e:
-            logger.error(f"Error creating new AI chat session: {e}", exc_info=True)
-            await update.message.reply_text("An error occurred while starting the AI.")
-            return None
+    def _get_or_create_agent_for_chat(
+        self, context: ContextTypes.DEFAULT_TYPE
+    ) -> BudgetAgent:
+        """
+        Retrieves the agent for the current chat, or creates a new one if it doesn't exist.
+        This ensures each user chat has its own separate memory.
+        """
+        if "budget_agent_instance" not in context.chat_data:
+            # Create a new instance from the prototype to ensure a fresh start
+            context.chat_data["budget_agent_instance"] = BudgetAgent(
+                self.budget_agent_prototype.app_context
+            )
+
+        return context.chat_data["budget_agent_instance"]
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Sends a welcome message and lists available commands."""
@@ -87,31 +81,14 @@ class TelegramBotHandlers:
     async def new_chat_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
-        """Clears the previous AI conversation and starts a new one."""
-        if "ai_chat_session" in context.chat_data:
-            context.chat_data.pop("ai_chat_session")
-            logger.info("Existing AI chat session cleared.")
+        """Clears the previous AI conversation by removing the agent instance."""
+        if "budget_agent_instance" in context.chat_data:
+            del context.chat_data["budget_agent_instance"]
             await self.telegram_service.send_message(
-                "✨ My short-term memory has been cleared."
-            )
-
-        await self.telegram_service.send_message(
-            "🧠 Starting a new AI conversation... please wait a moment while I load your data."
-        )
-
-        # Trigger typing action
-        await context.bot.send_chat_action(
-            chat_id=update.effective_chat.id, action="typing"
-        )
-        chat_session = await self._create_new_ai_session(update, context)
-
-        if chat_session:
-            await self.telegram_service.send_message(
-                "I've loaded the latest data. What would you like to know?"
+                "My short-term memory has been cleared."
             )
         else:
-            # Error message already sent by _create_new_ai_session
-            pass
+            await self.telegram_service.send_message("What can I help you with?")
 
     async def start_categorization(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -271,27 +248,16 @@ class TelegramBotHandlers:
         context: ContextTypes.DEFAULT_TYPE,
         command_query: str = None,
     ):
-        chat_session = context.chat_data.get("ai_chat_session")
         user_query = command_query or update.message.text
 
-        if not chat_session:
-            await context.bot.send_chat_action(
-                chat_id=update.effective_chat.id, action="typing"
-            )
-            await self.telegram_service.send_message(
-                "Just a moment, I'm loading your budget data to start our conversation..."
-            )
-            chat_session = await self._create_new_ai_session(update, context)
-            if not chat_session:
-                # Error message already sent by _create_new_ai_session
-                return
-
+        # Show a "typing..." indicator
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id, action="typing"
         )
 
-        response_text = await asyncio.to_thread(
-            self.gemini_ai.send_chat_message, chat_session, user_query
-        )
+        agent = self._get_or_create_agent_for_chat(context)
+
+        # Run the agent's invoke method in a separate thread to avoid blocking asyncio
+        response_text = await asyncio.to_thread(agent.invoke, user_query)
 
         await self.telegram_service.send_message(response_text, parse_mode="Markdown")

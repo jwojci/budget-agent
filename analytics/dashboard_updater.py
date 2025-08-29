@@ -18,74 +18,108 @@ class DashboardUpdater:
         self.sheets_service = sheets_service
         self.expense_data_manager = expense_data_manager
         self.metrics_calculator = metrics_calculator
-        self.budget_ws = sheets_service.get_worksheet(config.BUDGET_WORKSHEET_NAME)
+        self.budget_ws = sheets_service.get_worksheet(config.WORKSHEETS["budget"])
 
     def update_dashboard(self) -> dict | None:
-        """Updates dashboard with calculated metrics."""
-        logger.info("Updating dashboard...")
-
+        """
+        Calculates a dynamic, proactive monthly budget and updates the dashboard.
+        """
+        logger.info("Starting dashboard update process...")
         try:
-            # Get monthly income
-            income = self.expense_data_manager.get_monthly_disposable_income()
-            if income == 0.0:
-                logger.error("Monthly income is 0.")
+            # 1. Get Budget Worksheet (still needed for formatting later)
+            # Reference config.WORKSHEETS["budget"] directly
+            self.budget_ws = self.sheets_service.get_worksheet(
+                config.WORKSHEETS["budget"]
+            )
+
+            # 2. Get Monthly Income using ExpenseDataManager
+            monthly_disposable_income = (
+                self.expense_data_manager.get_monthly_disposable_income()
+            )
+            if monthly_disposable_income == 0.0:
+                logger.error("Monthly disposable income is 0. Cannot update dashboard.")
                 return None
 
-            # Load expense data
+            # 3. Load Expense Data
             df = self.expense_data_manager.load_expenses_dataframe()
             if df.empty:
-                logger.warning("No expense data available.")
-                self.sheets_service.clear_worksheet(self.budget_ws)
-                self.sheets_service.update_cells(
-                    self.budget_ws, config.NR_BUDGET_SUMMARY, [["No Data"]]
+                logger.warning(
+                    "No expense data available to update dashboard. Skipping update."
                 )
                 return None
-
-            # Calculate metrics
-            metrics = self.metrics_calculator.calculate_all_metrics(df, income)
+            # 4. Calculate all metrics - PASS THE INCOME HERE
+            metrics = self.metrics_calculator.calculate_all_metrics(
+                df, monthly_disposable_income
+            )
             if not metrics:
-                logger.error("Failed to calculate metrics.")
+                logger.error("Could not calculate dashboard metrics. Skipping update.")
                 return None
 
-            # Prepare data blocks
-            summary_data = self.metrics_calculator.prepare_summary_data(metrics)
-            daily_header, daily_rows = (
-                self.metrics_calculator.prepare_daily_breakdown_data(metrics)
+            # Need to get category types records for prepare_category_and_type_data
+            # Reference config.WORKSHEETS["categories"] directly
+            category_types_records = self.sheets_service.get_all_records(
+                config.WORKSHEETS["categories"]
             )
-            category_records = self.sheets_service.get_all_records(
-                config.CATEGORIES_WORKSHEET_NAME
-            )
-            category_data, needs_wants_data = (
+            category_data_for_sheet, needs_wants_data_for_sheet = (
                 self.metrics_calculator.prepare_category_and_type_data(
-                    metrics["month_to_date_expenses_df"], category_records
+                    metrics["month_to_date_expenses_df"], category_types_records
                 )
             )
+
             top_spending_data = self.metrics_calculator.prepare_top_merchants_data(df)
 
-            # Combine data for sheet
-            main_data = summary_data + daily_header + daily_rows
-            side_data = (
-                category_data + [[]] + needs_wants_data + [[]] + top_spending_data
+            # 5. Write to the sheet
+            self.sheets_service.clear_worksheet(self.budget_ws)
+            summary_data_for_sheet = self.metrics_calculator.prepare_summary_data(
+                metrics
+            )
+            daily_breakdown_header, daily_spending_rows = (
+                self.metrics_calculator.prepare_daily_breakdown_data(metrics)
             )
 
-            # Update sheet
-            self.sheets_service.clear_worksheet(self.budget_ws)
+            main_dashboard_data = (
+                summary_data_for_sheet + daily_breakdown_header + daily_spending_rows
+            )
+            self.sheets_service.update_cells(self.budget_ws, "A1", main_dashboard_data)
+
             self.sheets_service.update_cells(
-                self.budget_ws, config.NR_BUDGET_SUMMARY, main_data
+                self.budget_ws, "E1", category_data_for_sheet
+            )
+
+            needs_wants_start_row = len(category_data_for_sheet) + 2
+            self.sheets_service.update_cells(
+                self.budget_ws, f"E{needs_wants_start_row}", needs_wants_data_for_sheet
+            )
+
+            top_merchants_start_row = (
+                needs_wants_start_row + len(needs_wants_data_for_sheet) + 2
             )
             self.sheets_service.update_cells(
-                self.budget_ws, config.NR_DASHBOARD_SIDEPANEL, side_data
+                self.budget_ws, f"E{top_merchants_start_row}", top_spending_data
             )
+
+            if not df.empty:
+                # Get the latest transaction date from the source data
+                latest_transaction_date = df["Date"].max()
+                # Format it as a string to store in the sheet
+                signature = f"Last Updated from Data as of: {latest_transaction_date.strftime('%Y-%m-%d %H:%M:%S')}"
+                # Write the signature to an out-of-the-way cell
+                self.sheets_service.update_cells(self.budget_ws, "A20", [[signature]])
+
+            # 6. Apply Formatting (delegated to sheets_service)
             self.sheets_service.format_dashboard_sheet(
                 self.budget_ws, metrics["target_weekly_spend"]
             )
+            logger.success(
+                "Budget sheet updated successfully with Proactive Monthly Plan logic."
+            )
 
-            logger.info("Dashboard updated.")
             return {
                 "remaining_weekly": metrics["remaining_weekly_target"],
                 "safe_to_spend_today": metrics["safe_to_spend_today"],
             }
-
         except Exception as e:
-            logger.error(f"Dashboard update failed: {e}")
+            logger.error(
+                f"An error occurred during dashboard update: {e}", exc_info=True
+            )
             return None

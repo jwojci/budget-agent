@@ -1,4 +1,5 @@
 import asyncio
+import pandas as pd
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 from telegram.ext import (
@@ -18,38 +19,85 @@ from services.google_sheets import GoogleSheetsService
 from services.telegram_api import TelegramService
 from data_processing.expense_data import ExpenseDataManager
 from analytics.dashboard_metrics import DashboardMetricsCalculator
-from ai.gemini_ai import GeminiAI
+from ai.agent import BudgetAgent
 from bot.telegram_handlers import (
     TelegramBotHandlers,
     SELECTING_CATEGORY,
     SELECTING_TYPE,
 )
 from analytics.daily_task_runner import DailyTaskRunner
+from analytics.dashboard_updater import DashboardUpdater
 
 
 # Setup logger for the bot runner specifically
 logger.add(config.LOG_FILE)
 
 
-async def post_init_tasks(application: Application):
-    """Starts the scheduler for daily tasks after bot initialization."""
-    scheduler = AsyncIOScheduler(timezone="Europe/Warsaw")
-    job_runner = application.bot_data.get("scheduled_jobs")
+async def _check_and_update_dashboard(app: Application):
+    logger.info("Checking dashboard...")
+    try:
+        sheets = app.bot_data["sheets_service"]
+        expenses = app.bot_data["expense_data_manager"]
+        df = expenses.load_expenses_dataframe()
 
-    if not job_runner:
-        logger.error("Missing 'scheduled_jobs' in application context.")
-        return
+        latest_timestamp = df["Date"].max() if not df.empty else None
+        stored_signature = sheets.get_cell_value(config.WORKSHEETS["budget"], "A20")
+        stored_timestamp = (
+            pd.to_datetime(stored_signature.split(": ", 1)[1])
+            if stored_signature
+            else None
+        )
 
-    scheduler.add_job(
-        job_runner.run_daily_tasks,
-        "cron",
-        hour=10,
-        minute=3,
-        name="Daily Financial Check",
-    )
-    scheduler.start()
-    application.bot_data["scheduler"] = scheduler
-    logger.info("Scheduler started.")
+        if not stored_timestamp or latest_timestamp != stored_timestamp:
+            logger.info("Updating dashboard...")
+            updater = DashboardUpdater(
+                sheets, expenses, app.bot_data["metrics_calculator"]
+            )
+            updater.update_dashboard()
+            logger.success("Dashboard updated.")
+        else:
+            logger.info("Dashboard up-to-date.")
+
+    except Exception as e:
+        logger.critical(
+            f"Failed to perform initial dashboard update on startup: {e}", exc_info=True
+        )
+        await app.bot_data["telegram_service"].send_message(
+            "**Critical Error:** The bot started but failed to update the dashboard. Please check the logs."
+        )
+
+
+async def _setup_scheduler(app: Application):
+    try:
+        scheduler = AsyncIOScheduler(timezone="Europe/Warsaw")
+        job_runner = app.bot_data.get("scheduled_jobs")
+
+        if not job_runner:
+            logger.error("Missing 'scheduled_jobs' in application context.")
+            return
+
+        scheduler.add_job(
+            job_runner.run_daily_tasks,
+            "cron",
+            hour=10,
+            minute=3,
+            name="Daily Financial Check",
+            args=[app],
+        )
+        scheduler.start()
+        app.bot_data["scheduler"] = scheduler
+        logger.info("Scheduler started for daily tasks.")
+    except Exception as e:
+        logger.critical(f"Failed to setup scheduler on startup: {e}")
+        await app.bot_data["telegram_service"].send_message(
+            "**Critical Error:** The bot started but failed to setup the scheduler. Please check the logs."
+        )
+
+
+async def post_init_tasks(app: Application):
+    """Initialize scheduler and update dashboard."""
+    await _check_and_update_dashboard(app)
+    await _setup_scheduler(app)
 
 
 async def post_shutdown_tasks(application: Application):
@@ -62,8 +110,6 @@ async def post_shutdown_tasks(application: Application):
 
 def main():
     """Starts the bot, initializes all services, and runs the scheduler."""
-    logger.info("Starting Budget Bot application...")
-
     app_context = {}
 
     # --- Initialize all services and context ONCE ---
@@ -81,7 +127,7 @@ def main():
         app_context["expense_data_manager"] = ExpenseDataManager(sheets_service)
         app_context["metrics_calculator"] = DashboardMetricsCalculator(sheets_service)
         app_context["telegram_service"] = TelegramService()
-        app_context["gemini_ai"] = GeminiAI(app_context)
+        app_context["budget_agent"] = BudgetAgent(app_context)
         app_context["scheduled_jobs"] = DailyTaskRunner(app_context)
 
         # Start telegram app
@@ -95,10 +141,12 @@ def main():
             .post_shutdown(post_shutdown_tasks)
             .build()
         )
+
+        app_context["application"] = application
+
         application.bot_data.update(app_context)
 
     except Exception as e:
-        print("EXCEPTION", e)
         logger.critical(f"CRITICAL FAILURE during initial setup: {e}")
         # Attempt to send a startup failure message
         asyncio.run(TelegramService().send_message(f"🔥 Bot failed to start: {e}"))
@@ -110,7 +158,7 @@ def main():
         telegram_service=app_context["telegram_service"],
         expense_data_manager=app_context["expense_data_manager"],
         metrics_calculator=app_context["metrics_calculator"],
-        gemini_ai=app_context["gemini_ai"],
+        budget_agent=app_context["budget_agent"],
     )
 
     # --- Setup ConversationHandler for categorization ---
@@ -143,7 +191,7 @@ def main():
         MessageHandler(filters.TEXT & ~filters.COMMAND, bot_handlers.handle_text_query)
     )
 
-    logger.info("Bot is now polling for messages...")
+    logger.success("Bot is now polling for messages...")
     application.run_polling()
 
 

@@ -76,7 +76,6 @@ class GoogleAuthenticator:
             return None
         try:
             service = build("gmail", "v1", credentials=creds)
-            logger.info("Gmail service client built successfully.")
             return service
         except HttpError as error:
             logger.error(f"An HTTP error occurred building the Gmail service: {error}")
@@ -95,7 +94,6 @@ class GoogleAuthenticator:
             return None
         try:
             gc = gspread.Client(auth=creds)
-            logger.info("gspread client authenticated.")
             return gc
         except Exception as e:
             logger.error(f"Failed to authenticate with gspread: {e}", exc_info=True)

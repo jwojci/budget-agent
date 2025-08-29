@@ -35,7 +35,7 @@ class MonthlyArchiver:
         """Checks if the given month's summary is already archived."""
         try:
             archived_months = self.sheets_service.get_col_values(
-                config.HISTORY_WORKSHEET_NAME, 1
+                config.WORKSHEETS["history"], 1
             )
             return month_str in archived_months
         except Exception as e:
@@ -88,7 +88,7 @@ class MonthlyArchiver:
 
             # 5. Calculate Needs/Wants Spending (requires category data)
             category_types_records = self.sheets_service.get_all_records(
-                config.CATEGORIES_WORKSHEET_NAME
+                config.WORKSHEETS["categories"]
             )
             _, _, needs_percent, wants_percent = (
                 self.expense_data_manager.calculate_category_spending(
@@ -97,9 +97,7 @@ class MonthlyArchiver:
             )
 
             # 6. Prepare and Archive Data
-            history_ws = self.sheets_service.get_worksheet(
-                config.HISTORY_WORKSHEET_NAME
-            )
+            history_ws = self.sheets_service.get_worksheet(config.WORKSHEETS["history"])
             new_history_row = [
                 month_to_archive_str,
                 total_spent,

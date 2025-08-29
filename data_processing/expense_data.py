@@ -14,19 +14,17 @@ class ExpenseDataManager:
     def load_expenses_dataframe(self) -> pd.DataFrame:
         """Loads expenses from worksheet into a DataFrame with numeric 'Expense' and datetime 'Date'."""
         try:
-            records = self.sheets_service.get_all_records(
-                config.EXPENSES_WORKSHEET_NAME
-            )
+            records = self.sheets_service.get_all_records(config.WORKSHEETS["expenses"])
             if not records:
-                logger.warning(f"'{config.EXPENSES_WORKSHEET_NAME}' is empty.")
-                return pd.DataFrame(columns=config.EXPECTED_EXPENSE_HEADER)
+                logger.warning(f"'{config.WORKSHEETS['expenses']}' is empty.")
+                return pd.DataFrame(columns=config.EXPENSE_HEADER)
 
             df = pd.DataFrame(records)
-            if not all(col in df.columns for col in config.REQUIRED_DF_COLUMNS):
+            if not all(col in df.columns for col in config.DF_COLUMNS):
                 logger.error(
-                    f"Missing required columns: {[col for col in config.REQUIRED_DF_COLUMNS if col not in df.columns]}"
+                    f"Missing required columns: {[col for col in config.DF_COLUMNS if col not in df.columns]}"
                 )
-                return pd.DataFrame(columns=config.EXPECTED_EXPENSE_HEADER)
+                return pd.DataFrame(columns=config.EXPENSE_HEADER)
 
             df["Expense"] = pd.to_numeric(df["Expense"], errors="coerce").fillna(0)
             df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.tz_localize(
@@ -38,18 +36,18 @@ class ExpenseDataManager:
 
         except Exception as e:
             logger.error(
-                f"Failed to load expenses from '{config.EXPENSES_WORKSHEET_NAME}': {e}"
+                f"Failed to load expenses from '{config.WORKSHEETS['expenses']}': {e}"
             )
-            return pd.DataFrame(columns=config.EXPECTED_EXPENSE_HEADER)
+            return pd.DataFrame(columns=config.EXPENSE_HEADER)
 
     def get_category_data(self) -> tuple[list[dict], list[str], any]:
         """Fetches uncategorized keywords, existing categories, and Categories worksheet."""
         try:
             categories_ws = self.sheets_service.get_worksheet(
-                config.CATEGORIES_WORKSHEET_NAME
+                config.WORKSHEETS["categories"]
             )
             records = self.sheets_service.get_all_records(
-                config.CATEGORIES_WORKSHEET_NAME
+                config.WORKSHEETS["categories"]
             )
 
             uncategorized = [
@@ -66,7 +64,7 @@ class ExpenseDataManager:
 
         except Exception as e:
             logger.error(
-                f"Failed to load category data from '{config.CATEGORIES_WORKSHEET_NAME}': {e}"
+                f"Failed to load category data from '{config.WORKSHEETS['categories']}': {e}"
             )
             return [], [], None
 
@@ -74,11 +72,13 @@ class ExpenseDataManager:
         """Retrieves monthly disposable income from the budget worksheet."""
         try:
             value_range = self.sheets_service.get_values(
-                config.BUDGET_WORKSHEET_NAME, config.NR_MONTHLY_INCOME
+                config.WORKSHEETS["budget"], config.NAMED_RANGES["monthly_income"]
             )
 
             if not value_range or not value_range[0] or not value_range[0][0]:
-                logger.error(f"Named range '{config.NR_MONTHLY_INCOME}' is empty.")
+                logger.error(
+                    f"Named range '{config.NAMED_RANGES['monthly_income']}' is empty."
+                )
                 return 0.0
 
             income_str = re.sub(r"[^\d,.]", "", str(value_range[0][0]))
@@ -88,7 +88,7 @@ class ExpenseDataManager:
 
         except Exception as e:
             logger.error(
-                f"Failed to parse monthly income from '{config.NR_MONTHLY_INCOME}': {e}"
+                f"Failed to parse monthly income from '{config.NAMED_RANGES['monthly_income']}': {e}"
             )
             return 0.0
 

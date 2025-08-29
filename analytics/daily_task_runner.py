@@ -1,6 +1,8 @@
 import asyncio
 import datetime
 from loguru import logger
+from telegram.ext import Application
+from langchain_core.messages import HumanMessage, AIMessage
 
 import config
 from auth.google_auth import GoogleAuthenticator
@@ -9,6 +11,7 @@ from services.gmail_api import GmailService
 from analytics.dashboard_updater import DashboardUpdater
 from analytics.monthly_archiving import MonthlyArchiver
 from analytics.anomaly_detection import AnomalyDetector
+from ai.agent import BudgetAgent
 
 
 class DailyTaskRunner:
@@ -17,7 +20,7 @@ class DailyTaskRunner:
         self.sheets_service = app_context["sheets_service"]
         self.expense_data_manager = app_context["expense_data_manager"]
         self.telegram_service = app_context["telegram_service"]
-        self.gemini_ai = app_context["gemini_ai"]
+        self.budget_agent = app_context["budget_agent"]
         # Initialize services used only for the daily run
         try:
             authenticator = GoogleAuthenticator()
@@ -39,7 +42,21 @@ class DailyTaskRunner:
             logger.critical(f"Failed to initialize services for scheduled jobs: {e}")
             raise
 
-    async def run_daily_tasks(self):
+    def _get_main_chat_agent(self, application: Application) -> BudgetAgent | None:
+        """
+        Gets the user's persistent BudgetAgent instance from chat_data.
+        """
+        chat_id = int(config.TELEGRAM_CHAT_ID)
+        chat_data = application.chat_data.get(chat_id, {})
+
+        if "budget_agent_instance" not in chat_data:
+            logger.info("Main chat agent not found, creating one for weekly digest.")
+            chat_data["budget_agent_instance"] = BudgetAgent(self.app_context)
+            self.application.chat_data[chat_id] = chat_data
+
+        return chat_data["budget_agent_instance"]
+
+    async def run_daily_tasks(self, application: Application):
         """The main scheduled workflow of the budget tracker application."""
         try:
             logger.info("--- Starting Daily Scheduled Run ---")
@@ -47,7 +64,7 @@ class DailyTaskRunner:
             await self._run_monthly_archive()
             await self._process_daily_emails()
             await self._run_anomaly_detection_and_dashboard_update()
-            await self._run_ai_weekly_digest()
+            await self._run_ai_weekly_digest(application)
             logger.success("✅ Daily run finished successfully.")
         except Exception as e:
             logger.critical(
@@ -61,15 +78,13 @@ class DailyTaskRunner:
         """Ensures the expenses worksheet has the correct header."""
         try:
             expenses_ws = self.sheets_service.get_worksheet(
-                config.EXPENSES_WORKSHEET_NAME
+                config.WORKSHEETS["expenses"]
             )
             header = expenses_ws.row_values(1)
-            if header != config.EXPECTED_EXPENSE_HEADER:
+            if header != config.EXPENSE_HEADER:
                 logger.warning("Expenses sheet header is incorrect. Fixing...")
                 expenses_ws.clear()
-                self.sheets_service.append_row(
-                    expenses_ws, config.EXPECTED_EXPENSE_HEADER
-                )
+                self.sheets_service.append_row(expenses_ws, config.EXPENSE_HEADER)
             else:
                 logger.info("Expenses sheet header is correct.")
         except Exception as e:
@@ -78,7 +93,7 @@ class DailyTaskRunner:
     async def _run_monthly_archive(self):
         """Handles monthly archiving if applicable."""
         today = datetime.datetime.now()
-        if today.day <= 4:  # Days 1-4 of the month for archiving
+        if today.day <= config.ARCHIVE_DAYS:  # Days 1-4 of the month for archiving
             logger.info("Checking for monthly summary archiving...")
             monthly_archiver = MonthlyArchiver(
                 self.sheets_service, self.expense_data_manager
@@ -104,15 +119,15 @@ class DailyTaskRunner:
             return
 
         # Setup worksheets and data
-        expenses_ws = self.sheets_service.get_worksheet(config.EXPENSES_WORKSHEET_NAME)
+        expenses_ws = self.sheets_service.get_worksheet(config.WORKSHEETS["expenses"])
         categories_ws = self.sheets_service.get_worksheet(
-            config.CATEGORIES_WORKSHEET_NAME
+            config.WORKSHEETS["categories"]
         )
         existing_dates = set(
-            self.sheets_service.get_col_values(config.EXPENSES_WORKSHEET_NAME, 6)[1:]
+            self.sheets_service.get_col_values(config.WORKSHEETS["expenses"], 6)[1:]
         )
         category_records = self.sheets_service.get_all_records(
-            config.CATEGORIES_WORKSHEET_NAME
+            config.WORKSHEETS["categories"]
         )
         existing_keywords = {
             rec.get("Keyword", "").lower()
@@ -197,41 +212,30 @@ class DailyTaskRunner:
         await self.telegram_service.send_message(message, parse_mode="Markdown")
         logger.info("Dashboard update complete.")
 
-    async def _run_ai_weekly_digest(self):
-        """Generates and sends weekly financial digest on Mondays, updating main chat context."""
+    async def _run_ai_weekly_digest(self, application: Application):
+        """Generates, sends, and saves weekly digest to the main chat context."""
         if datetime.datetime.now().weekday() != 0:  # 0 is Monday
             return
 
-        logger.info("Generating weekly digest...")
-
+        logger.info("Generating and contextualizing weekly AI digest...")
         try:
-            # Create temporary session for digest
-            temp_session = self.gemini_ai.start_new_chat()
-            if not temp_session:
-                logger.error("Failed to start AI session for digest.")
+            main_agent = self._get_main_chat_agent(application)
+            if not main_agent:
                 return
 
-            # Generate digest
-            digest_text = (
-                await asyncio.to_thread(
-                    temp_session.send_message,
-                    "Generate weekly financial digest based on last week's data.",
-                )
-            ).text
+            prompt = "Generate the weekly financial digest based on last week's spending data."
+            digest_text = await asyncio.to_thread(main_agent.invoke, prompt)
 
-            # Send digest to user
+            # send the message to the user
             await self.telegram_service.send_message(digest_text, parse_mode="Markdown")
 
-            # Update main chat session
-            chat_id = int(config.TELEGRAM_CHAT_ID)
-            main_session = (
-                self.application.chat_data[chat_id].get("ai_chat_session")
-                or self.gemini_ai.start_new_chat()
-            )
-            main_session.history = temp_session.history
-            self.application.chat_data[chat_id]["ai_chat_session"] = main_session
+            # this makes the agent "remember" this system-initiated conversation.
+            main_agent.chat_history.append(HumanMessage(content=prompt))
+            main_agent.chat_history.append(AIMessage(content=digest_text))
 
-            logger.info("Weekly digest sent and chat context updated.")
+            logger.info(
+                "Weekly AI digest sent and context updated in main chat session."
+            )
 
         except Exception as e:
-            logger.error(f"Failed to generate digest: {e}")
+            logger.error(f"Failed to generate and contextualize AI weekly digest: {e}")
