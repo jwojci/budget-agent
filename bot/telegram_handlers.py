@@ -93,57 +93,69 @@ class TelegramBotHandlers:
     async def start_categorization(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
-        await self.telegram_service.send_message(
-            "🔍 Searching for uncategorized merchants..."
-        )
+        """Starts the conversation by fetching data and calling the main UI function."""
+        await update.message.reply_text("🔍 Searching for uncategorized merchants...")
         try:
             uncategorized, existing_categories, categories_ws = (
                 self.expense_data_manager.get_category_data()
             )
         except Exception as e:
-            logger.error(
-                f"Error fetching category data for categorization: {e}", exc_info=True
-            )
-            await self.telegram_service.send_message(
-                "❌ Error loading category data. Please try again later."
-            )
+            logger.error(f"Error fetching category data: {e}", exc_info=True)
+            await update.message.reply_text("❌ Error loading category data.")
             return ConversationHandler.END
 
         if not uncategorized:
-            await self.telegram_service.send_message(
+            await update.message.reply_text(
                 "✨ All merchants are categorized. Great job!"
             )
             return ConversationHandler.END
 
-        context.user_data["uncategorized_keywords"] = (
-            uncategorized  # Rename for clarity
+        # Store all session data in one place
+        context.user_data.update(
+            {
+                "uncategorized": uncategorized,
+                "categories": existing_categories,
+                "worksheet": categories_ws,
+                "index": 0,
+                "total": len(uncategorized),
+            }
         )
-        context.user_data["existing_categories"] = existing_categories
-        context.user_data["categories_ws"] = categories_ws  # Store the worksheet object
-        context.user_data["current_index"] = 0
-        return await self.ask_to_categorize_keyword(update, context)
+
+        # Prepare and send the first message, which will be edited from now on
+        text, reply_markup = self._get_category_question(context)
+        await update.message.reply_text(
+            text, reply_markup=reply_markup, parse_mode="Markdown"
+        )
+
+        return SELECTING_CATEGORY
 
     async def ask_to_categorize_keyword(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
+        """
+        The master function that displays the current item and its buttons.
+        It either sends a new message (on first run) or edits an existing one.
+        It is the single source of truth for returning the next state.
+        """
         uncategorized_list = context.user_data["uncategorized_keywords"]
         index = context.user_data["current_index"]
+        query = update.callback_query
 
+        # Check if the conversation is over
         if index >= len(uncategorized_list):
             final_message = "🎉 All done! Everything is now categorized."
-            if update.callback_query:
-                await update.callback_query.message.reply_text(final_message)
+            if query:
+                # If we are in a callback, edit the message to its final state
+                await query.edit_message_text(text=final_message)
             else:
+                # This case should rarely happen, but as a fallback
                 await update.message.reply_text(final_message)
+            context.user_data.clear()
             return ConversationHandler.END
 
-        keyword_to_categorize = uncategorized_list[index]["Keyword"]
-        context.user_data["current_keyword_data"] = uncategorized_list[
-            index
-        ]  # Store the full row data
-        context.user_data["current_keyword"] = (
-            keyword_to_categorize  # For easier access to just the keyword string
-        )
+        # Prepare the message content for the current item
+        keyword = uncategorized_list[index]["Keyword"]
+        context.user_data["current_keyword"] = keyword
 
         buttons = [
             InlineKeyboardButton(cat, callback_data=f"cat_{cat}")
@@ -151,32 +163,134 @@ class TelegramBotHandlers:
         ]
         keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
         keyboard.append([InlineKeyboardButton("➡️ Skip", callback_data="cat_skip")])
+        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cat_cancel")])
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        message_text = f"How would you like to categorize this merchant?\n\n👉 *{keyword_to_categorize}*"
+        message_text = f"({index + 1}/{len(uncategorized_list)}) How would you categorize this merchant?\n\n👉 *{keyword}*"
 
-        if update.callback_query:
-            await update.callback_query.edit_message_text(
-                message_text, reply_markup=reply_markup, parse_mode="Markdown"
+        # If this is a callback, edit the message. Otherwise, send a new one.
+        if query:
+            await query.edit_message_text(
+                text=message_text, reply_markup=reply_markup, parse_mode="Markdown"
             )
         else:
             await update.message.reply_text(
-                message_text, reply_markup=reply_markup, parse_mode="Markdown"
+                text=message_text, reply_markup=reply_markup, parse_mode="Markdown"
             )
+
+        # Keep the conversation in the category selection state
         return SELECTING_CATEGORY
 
     async def receive_category_choice(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
+        """Handles a button press for category, skip, or cancel."""
         query = update.callback_query
-        await query.answer()  # Acknowledge the callback query
+        await query.answer()
 
         choice = query.data.split("_", 1)[1]
-        if choice == "skip":
-            context.user_data["current_index"] += 1
-            return await self.ask_to_categorize_keyword(update, context)
 
+        if choice == "cancel":
+            await query.edit_message_text("👍 Categorization cancelled.")
+            context.user_data.clear()
+            return ConversationHandler.END
+
+        if choice == "skip":
+            # Just move to the next item
+            context.user_data["index"] += 1
+            text, reply_markup = self._get_category_question(context)
+            await query.edit_message_text(
+                text, reply_markup=reply_markup, parse_mode="Markdown"
+            )
+
+            # If reply_markup is None, it means we're done. End the conversation.
+            return SELECTING_CATEGORY if reply_markup else ConversationHandler.END
+
+        # User selected a category. Store it and move to the "Need/Want" question.
         context.user_data["chosen_category"] = choice
+        text, reply_markup = self._get_type_question(context)
+        await query.edit_message_text(
+            text, reply_markup=reply_markup, parse_mode="Markdown"
+        )
+
+        return SELECTING_TYPE
+
+    async def receive_type_choice(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        """Handles the Need/Want button press."""
+        query = update.callback_query
+        await query.answer()
+
+        # Get all data from context
+        chosen_type = query.data.split("_", 1)[1]
+        keyword = context.user_data["uncategorized"][context.user_data["index"]][
+            "Keyword"
+        ]
+        category = context.user_data["chosen_category"]
+        worksheet = context.user_data["worksheet"]
+
+        # Update the spreadsheet
+        try:
+            cell = worksheet.find(keyword, in_column=1)
+            if cell:
+                self.sheets_service.update_cell(worksheet, cell.row, 2, category)
+                self.sheets_service.update_cell(worksheet, cell.row, 3, chosen_type)
+        except Exception as e:
+            logger.error(f"Failed to update sheet for '{keyword}': {e}", exc_info=True)
+            await query.edit_message_text(
+                "❌ An error occurred while updating the sheet. Cancelling."
+            )
+            return ConversationHandler.END
+
+        # Move to the next item and display it
+        context.user_data["index"] += 1
+        text, reply_markup = self._get_category_question(context)
+        await query.edit_message_text(
+            text, reply_markup=reply_markup, parse_mode="Markdown"
+        )
+
+        # If reply_markup is None, we're done. Otherwise, go back to the category selection state.
+        return SELECTING_CATEGORY if reply_markup else ConversationHandler.END
+
+    async def cancel_conversation(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        """Fallback for the /cancel command, in case the user types it."""
+        await update.message.reply_text("👍 Categorization cancelled.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    def _get_category_question(
+        self, context: ContextTypes.DEFAULT_TYPE
+    ) -> tuple[str, InlineKeyboardMarkup | None]:
+        """Generates the text and buttons for the category selection screen."""
+        idx = context.user_data["index"]
+        total = context.user_data["total"]
+
+        if idx >= total:
+            return "🎉 All done! Everything is now categorized.", None
+
+        keyword = context.user_data["uncategorized"][idx]["Keyword"]
+        categories = context.user_data["categories"]
+
+        buttons = [
+            InlineKeyboardButton(cat, callback_data=f"cat_{cat}") for cat in categories
+        ]
+        keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+        keyboard.append([InlineKeyboardButton("➡️ Skip", callback_data="cat_skip")])
+        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cat_cancel")])
+
+        text = f"**({idx + 1}/{total})** How do you categorize this merchant?\n\n👉 **{keyword}**"
+        return text, InlineKeyboardMarkup(keyboard)
+
+    def _get_type_question(
+        self, context: ContextTypes.DEFAULT_TYPE
+    ) -> tuple[str, InlineKeyboardMarkup]:
+        """Generates the text and buttons for the "Need vs Want" screen."""
+        idx = context.user_data["index"]
+        keyword = context.user_data["uncategorized"][idx]["Keyword"]
+        category = context.user_data["chosen_category"]
 
         keyboard = [
             [
@@ -184,63 +298,9 @@ class TelegramBotHandlers:
                 InlineKeyboardButton("🛍️ Want", callback_data="type_Want"),
             ]
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await query.edit_message_text(
-            text=f"Categorizing *{context.user_data['current_keyword']}* as `{choice}`.\n\nIs it a Need or a Want?",
-            reply_markup=reply_markup,
-            parse_mode="Markdown",
-        )
-        return SELECTING_TYPE
-
-    async def receive_type_choice(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        query = update.callback_query
-        await query.answer()  # Acknowledge the callback query
-
-        chosen_type = query.data.split("_", 1)[1]
-        keyword = context.user_data["current_keyword"]
-        category = context.user_data["chosen_category"]
-        categories_ws = context.user_data["categories_ws"]
-
-        try:
-            # Find the row by keyword in column 1 and update Category (col 2) and Type (col 3)
-            cell = categories_ws.find(keyword, in_column=1)
-            # Update cells: Keyword is col 1, Category is col 2, Type is col 3
-            self.sheets_service.update_cell(
-                categories_ws, cell.row, 2, category
-            )  # Update Category
-            self.sheets_service.update_cell(
-                categories_ws, cell.row, 3, chosen_type
-            )  # Update Type (assuming it's col 3)
-
-            logger.info(
-                f"Updated '{keyword}' to Category: {category}, Type: {chosen_type}"
-            )
-            await query.edit_message_text(
-                f"✅ *{keyword}* categorized as `{category}` (`{chosen_type}`)."
-            )
-
-        except Exception as e:
-            logger.error(
-                f"Failed to update sheet for keyword '{keyword}': {e}", exc_info=True
-            )
-            await query.edit_message_text(
-                "❌ An error occurred while updating the sheet for categorization."
-            )
-            return ConversationHandler.END
-
-        # Move to the next uncategorized keyword
-        context.user_data["current_index"] += 1
-        return await self.ask_to_categorize_keyword(update, context)
-
-    async def cancel_conversation(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> int:
-        await self.telegram_service.send_message("Categorization cancelled.")
-        context.user_data.clear()  # Clear all user_data for this conversation
-        return ConversationHandler.END
+        text = f"Got it. You categorized **{keyword}** as **{category}**.\n\nIs this a **Need** or a **Want**?"
+        return text, InlineKeyboardMarkup(keyboard)
 
     async def handle_text_query(
         self,

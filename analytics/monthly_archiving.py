@@ -2,9 +2,7 @@ import datetime
 
 from loguru import logger
 from services.google_sheets import GoogleSheetsService
-from data_processing.expense_data import (
-    ExpenseDataManager,
-)  # To get monthly income and category spending
+from data_processing.expense_data import ExpenseDataManager
 
 import config
 
@@ -34,7 +32,7 @@ class MonthlyArchiver:
     def _is_month_archived(self, month_str: str) -> bool:
         """Checks if the given month's summary is already archived."""
         try:
-            archived_months = self.sheets_service.get_col_values(
+            archived_months = self.sheets_service.get_column_values(
                 config.WORKSHEETS["history"], 1
             )
             return month_str in archived_months

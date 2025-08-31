@@ -34,6 +34,9 @@ logger.add(config.LOG_FILE)
 
 
 async def _check_and_update_dashboard(app: Application):
+    """
+    Checks the dashboard sheet for last update date and updates its if necessary.
+    """
     logger.info("Checking dashboard...")
     try:
         sheets = app.bot_data["sheets_service"]
@@ -68,6 +71,9 @@ async def _check_and_update_dashboard(app: Application):
 
 
 async def _setup_scheduler(app: Application):
+    """
+    Sets up the scheduler to run daily tasks
+    """
     try:
         scheduler = AsyncIOScheduler(timezone="Europe/Warsaw")
         job_runner = app.bot_data.get("scheduled_jobs")
@@ -79,8 +85,8 @@ async def _setup_scheduler(app: Application):
         scheduler.add_job(
             job_runner.run_daily_tasks,
             "cron",
-            hour=10,
-            minute=3,
+            hour=19,
+            minute=12,
             name="Daily Financial Check",
             args=[app],
         )
@@ -136,7 +142,7 @@ def main():
             .token(config.TELEGRAM_BOT_TOKEN)
             .context_types(
                 ContextTypes(context=CallbackContext, chat_data=dict, user_data=dict)
-            )  # Explicitly define context types
+            )
             .post_init(post_init_tasks)
             .post_shutdown(post_shutdown_tasks)
             .build()
@@ -148,11 +154,10 @@ def main():
 
     except Exception as e:
         logger.critical(f"CRITICAL FAILURE during initial setup: {e}")
-        # Attempt to send a startup failure message
         asyncio.run(TelegramService().send_message(f"🔥 Bot failed to start: {e}"))
         return
 
-    # --- Bot handlers setup (remains the same) ---
+    # --- Bot handlers setup ---
     bot_handlers = TelegramBotHandlers(
         sheets_service=app_context["sheets_service"],
         telegram_service=app_context["telegram_service"],
@@ -174,7 +179,15 @@ def main():
                 CallbackQueryHandler(bot_handlers.receive_type_choice, pattern="^type_")
             ],
         },
-        fallbacks=[CommandHandler("cancel", bot_handlers.cancel_conversation)],
+        # Add a fallback for the cancel button and the /cancel command
+        fallbacks=[
+            CommandHandler("cancel", bot_handlers.cancel_conversation),
+            CallbackQueryHandler(
+                bot_handlers.cancel_conversation, pattern="^cat_cancel$"
+            ),
+        ],
+        # Optional: Add a timeout
+        conversation_timeout=120,  # 2 minutes
     )
 
     # --- Register all handlers ---

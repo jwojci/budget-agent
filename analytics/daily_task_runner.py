@@ -95,10 +95,7 @@ class DailyTaskRunner:
         today = datetime.datetime.now()
         if today.day <= config.ARCHIVE_DAYS:  # Days 1-4 of the month for archiving
             logger.info("Checking for monthly summary archiving...")
-            monthly_archiver = MonthlyArchiver(
-                self.sheets_service, self.expense_data_manager
-            )
-            archived_data = monthly_archiver.archive_monthly_summary()
+            archived_data = self.monthly_archiver.archive_monthly_summary()
             if archived_data:
                 summary_message = self.telegram_service.format_summary_for_telegram(
                     archived_data
@@ -110,21 +107,46 @@ class DailyTaskRunner:
         logger.info("Processing daily emails...")
 
         # Get parser
-        parser = get_parser(config.EMAIL_SENDER)
+        parser = self._get_email_parser()
         if not parser:
-            logger.error(f"No parser for '{config.EMAIL_SENDER}'.")
-            await self.telegram_service.send_message(
-                f"⚠️ Parser Error: No parser for '{config.EMAIL_SENDER}'."
-            )
             return
 
         # Setup worksheets and data
+        worksheets, existing_data = await self._setup_email_processing_data()
+
+        # Process emails and collect results
+        new_rows, new_keywords = await self._process_emails(parser, existing_data)
+
+        # Update sheets with new data
+        await self._update_sheets_with_transactions(worksheets["expenses"], new_rows)
+
+        # Handle new keywords
+        await self._handle_new_keywords(
+            worksheets["categories"], existing_data["existing_keywords"], new_keywords
+        )
+
+        logger.info("Email processing complete.")
+
+    def _get_email_parser(self):
+        """Retrieves the appropriate email parser based on configuration."""
+        parser = get_parser(config.EMAIL_SENDER)
+        if not parser:
+            logger.error(f"No parser for '{config.EMAIL_SENDER}'.")
+            asyncio.create_task(
+                self.telegram_service.send_message(
+                    f"Parser Error: No parser for '{config.EMAIL_SENDER}'."
+                )
+            )
+        return parser
+
+    async def _setup_email_processing_data(self):
+        """Sets up worksheets and existing data needed for email processing."""
         expenses_ws = self.sheets_service.get_worksheet(config.WORKSHEETS["expenses"])
         categories_ws = self.sheets_service.get_worksheet(
             config.WORKSHEETS["categories"]
         )
         existing_dates = set(
-            self.sheets_service.get_col_values(config.WORKSHEETS["expenses"], 6)[1:]
+            self.sheets_service.get_column_values(config.WORKSHEETS["expenses"], 6)[1:]
         )
         category_records = self.sheets_service.get_all_records(
             config.WORKSHEETS["categories"]
@@ -134,11 +156,18 @@ class DailyTaskRunner:
             for rec in category_records
             if rec.get("Keyword")
         }
+        return {"expenses": expenses_ws, "categories": categories_ws}, {
+            "existing_dates": existing_dates,
+            "category_records": category_records,
+            "existing_keywords": existing_keywords,
+        }
 
+    async def _process_emails(self, parser, existing_data):
+        """Processes emails for the current month and extracts transactions and keywords."""
         new_rows, new_keywords = [], set()
-        for email_id in reversed(
-            self.gmail_service.get_email_ids_for_current_month() or []
-        ):
+        email_ids = self.gmail_service.get_email_ids_for_current_month() or []
+
+        for email_id in reversed(email_ids):
             attachment_path = self.gmail_service.save_attachments_from_message(email_id)
             if not attachment_path:
                 logger.warning(f"No attachment for email {email_id}.")
@@ -147,12 +176,18 @@ class DailyTaskRunner:
             # Parse and process transactions
             raw_transactions = parser.parse_html(attachment_path)
             rows, keywords = parser.process_transactions(
-                raw_transactions, attachment_path, existing_dates, category_records
+                raw_transactions,
+                attachment_path,
+                existing_data["existing_dates"],
+                existing_data["category_records"],
             )
             new_rows.extend(rows)
             new_keywords.update(keywords)
 
-        # Update sheets
+        return new_rows, new_keywords
+
+    async def _update_sheets_with_transactions(self, expenses_ws, new_rows):
+        """Updates the expenses worksheet with new transaction rows."""
         if new_rows:
             logger.info(f"Adding {len(new_rows)} transactions...")
             self.sheets_service.append_rows(expenses_ws, new_rows)
@@ -160,7 +195,10 @@ class DailyTaskRunner:
                 f"✅ {len(new_rows)} transactions saved."
             )
 
-        # Handle new keywords
+    async def _handle_new_keywords(
+        self, categories_ws, existing_keywords, new_keywords
+    ):
+        """Handles new keywords by adding them to the categories worksheet."""
         truly_new_keywords = [
             kw for kw in new_keywords if kw.lower() not in existing_keywords
         ]
@@ -174,8 +212,6 @@ class DailyTaskRunner:
                 + "\n- ".join(truly_new_keywords)
                 + "\n\nUse /categorize."
             )
-
-        logger.info("Email processing complete.")
 
     async def _run_anomaly_detection_and_dashboard_update(self):
         """Runs anomaly detection and updates the budget dashboard."""

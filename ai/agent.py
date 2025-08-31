@@ -44,7 +44,7 @@ class BudgetAgent:
             - Use 'get_filtered_aggregated_data' for any specific or detailed questions about transaction data.
             - Use 'categorize_merchant' to update a merchant's category.
             - Use 'get_weekly_spending_data' to get data for the weekly summary, then write a short, insightful digest based on that data in markdown format.
-            Think step-by-step before calling a tool. Respond in a friendly, conversational tone. **When creating lists, use hyphens (-) instead of asterisks (*).**
+            Think step-by-step before calling a tool. Respond in a friendly, conversational tone. **When creating lists, use hyphens (-) instead of asterisks (*).** All monetary values are PLN
             """
 
             # create prompt template to invoke later

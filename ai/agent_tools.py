@@ -106,7 +106,23 @@ def create_agent_tools(app_context):
         ascending: bool = False,
         head: int = 10,
     ) -> str:
-        """Queries DataFrame with filters, grouping, and aggregations."""
+        """
+        Safely queries the transaction DataFrame.
+        This tool allows for filtering, grouping, and aggregating data.
+
+        Args:
+            filters (Optional[List[Dict]]): List of filters. Each dict has 'column', 'operator', 'value'.
+                Example: [{'column': 'Category', 'operator': '==', 'value': 'Groceries'}]
+                Supported operators: '==', '!=', '>', '<', '>=', '<=', 'in', 'not in'.
+            group_by (Optional[List[str]]): Column(s) to group by. Example: ['Category', 'Description']
+            aggregations (Optional[Dict[str, str]]): Aggregation functions to apply. Example: {{'Expense': 'sum'}}
+            sort_by (Optional[str]): Column to sort the final result by.
+            ascending (bool): Sort order. Defaults to False (descending).
+            head (int): Number of top results to return.
+
+        Example usage for "total expense per category":
+        group_by=['Category'], aggregations={{'Expense': 'sum'}}
+        """
 
         ops = {
             "==": op.eq,
