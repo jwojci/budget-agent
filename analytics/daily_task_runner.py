@@ -42,7 +42,8 @@ class DailyTaskRunner:
             await self._check_and_fix_expenses_header()
             await self._run_monthly_archive()
             await self.email_processor.process_new_transactions()
-            await self._run_anomaly_detection_and_dashboard_update()
+            await self._run_anomaly_detection()
+            await self._update_dashboard_and_notify()
             await self._run_weekly_digest_if_need(application)
 
             logger.success("✅ Daily run finished successfully.")
@@ -82,37 +83,38 @@ class DailyTaskRunner:
                 )
                 await self.telegram_service.send_message(summary_message)
 
-    async def _run_anomaly_detection_and_dashboard_update(self):
-        """Runs anomaly detection and updates the budget dashboard."""
-        logger.info("Running anomaly detection and dashboard update...")
-
-        # Run anomaly detection
+    async def _run_anomaly_detection(self):
+        """Runs anomaly detection and sends alerts if any are found."""
+        logger.info("Running anomaly detection...")
         anomaly_messages = self.anomaly_detector.check_for_spending_anomalies()
         for msg in anomaly_messages or []:
             await self.telegram_service.send_message(msg, parse_mode="Markdown")
-        logger.info(
+
+        msg = (
             f"Sent {len(anomaly_messages)} anomaly alerts."
             if anomaly_messages
             else "No anomalies detected."
         )
+        logger.info(msg)
 
-        # Update dashboard
+    async def _update_dashboard_and_notify(self):
+        """Updates the budget dashboard and sends a status notification."""
         logger.info("Updating dashboard...")
         dashboard_data = self.dashboard_updater.update_dashboard()
-        remaining = dashboard_data.get("remaining_weekly", 0) if dashboard_data else 0
-        safe_to_spend = (
-            dashboard_data.get("safe_to_spend_today", 0) if dashboard_data else 0
-        )
 
-        message = (
-            (
+        if dashboard_data:
+            remaining = dashboard_data.get("remaining_weekly", 0)
+            safe_to_spend = dashboard_data.get("safe_to_spend_today", 0)
+
+            message = (
                 f"🏁 *Script Finished*\nDashboard updated.\n\n"
                 f"💰 Weekly remaining: *{remaining:,.2f} PLN*\n"
                 f"💡 Safe to spend today: *{safe_to_spend:,.2f} PLN*"
             )
-            if dashboard_data
-            else "🏁 *Script Finished*\nDashboard updated, but summary data unavailable."
-        )
+        else:
+            message = (
+                "🏁 *Script Finished*\nDashboard updated, but summary data unavailable."
+            )
 
         await self.telegram_service.send_message(message, parse_mode="Markdown")
         logger.info("Dashboard update complete.")
