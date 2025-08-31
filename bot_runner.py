@@ -85,8 +85,8 @@ async def _setup_scheduler(app: Application):
         scheduler.add_job(
             job_runner.run_daily_tasks,
             "cron",
-            hour=19,
-            minute=12,
+            hour=22,
+            minute=5,
             name="Daily Financial Check",
             args=[app],
         )
