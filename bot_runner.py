@@ -16,6 +16,7 @@ from telegram.ext import (
 import config
 from auth.google_auth import GoogleAuthenticator
 from services.google_sheets import GoogleSheetsService
+from services.gmail_api import GmailService
 from services.telegram_api import TelegramService
 from data_processing.expense_data import ExpenseDataManager
 from analytics.dashboard_metrics import DashboardMetricsCalculator
@@ -122,13 +123,15 @@ def main():
     try:
         authenticator = GoogleAuthenticator()
         gspread_client = authenticator.get_gspread_client()
-        if not gspread_client:
-            raise ConnectionError("Failed to initialize gspread client.")
+        gmail_client = authenticator.get_gmail_client()
+
+        if not gspread_client or gmail_client:
+            raise ConnectionError("Failed to initialize one of google apis clients.")
 
         sheets_service = GoogleSheetsService(gspread_client)
         sheets_service.open_spreadsheet(config.SPREADSHEET_NAME)
-
         # Populate app context with shared services
+        app_context["gmail_service"] = GmailService(gmail_client)
         app_context["sheets_service"] = sheets_service
         app_context["expense_data_manager"] = ExpenseDataManager(sheets_service)
         app_context["metrics_calculator"] = DashboardMetricsCalculator(sheets_service)

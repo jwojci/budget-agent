@@ -4,7 +4,6 @@ from loguru import logger
 
 import config
 from data_processing.transaction_parser import get_parser
-from auth.google_auth import GoogleAuthenticator
 from services.google_sheets import GoogleSheetsService
 from services.gmail_api import GmailService
 from services.telegram_api import TelegramService
@@ -16,19 +15,14 @@ class EmailProcessor:
     """
 
     def __init__(
-        self, sheets_service: GoogleSheetsService, telegram_service: TelegramService
+        self,
+        sheets_service: GoogleSheetsService,
+        telegram_service: TelegramService,
+        gmail_service: GmailService,
     ):
         self.sheets_service = sheets_service
         self.telegram_service = telegram_service
-        try:
-            authenticator = GoogleAuthenticator()
-            gmail_api_client = authenticator.get_gmail_service()
-            if not gmail_api_client:
-                raise ConnectionError("Failed to get Gmail client for EmailProcessor.")
-            self.gmail_service = GmailService(gmail_api_client)
-        except Exception as e:
-            logger.critical(f"Failed to initialize GmailService in EmailProcessor: {e}")
-            self.gmail_service = None
+        self.gmail_service = gmail_service
 
     async def process_new_transactions(self):
         """Fetches and processes daily expense emails using the parser factory."""

@@ -69,7 +69,7 @@ class GoogleAuthenticator:
                 token.write(self._creds.to_json())
         return self._creds
 
-    def get_gmail_service(self):
+    def get_gmail_client(self):
         """Builds and returns the Gmail service client."""
         creds = self.get_creds()
         if not creds:

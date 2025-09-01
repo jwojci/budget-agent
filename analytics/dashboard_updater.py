@@ -26,31 +26,14 @@ class DashboardUpdater:
         """
         logger.info("Starting dashboard update process...")
         try:
-            # 1. Get Budget Worksheet (still needed for formatting later)
-            # Reference config.WORKSHEETS["budget"] directly
-            self.budget_ws = self.sheets_service.get_worksheet(
-                config.WORKSHEETS["budget"]
-            )
-
-            # 2. Get Monthly Income using ExpenseDataManager
-            monthly_disposable_income = (
-                self.expense_data_manager.get_monthly_disposable_income()
-            )
-            if monthly_disposable_income == 0.0:
-                logger.error("Monthly disposable income is 0. Cannot update dashboard.")
-                return None
-
-            # 3. Load Expense Data
+            # Load Expense Data
             df = self.expense_data_manager.load_expenses_dataframe()
             if df.empty:
                 logger.warning(
                     "No expense data available to update dashboard. Skipping update."
                 )
                 return None
-            # 4. Calculate all metrics - PASS THE INCOME HERE
-            metrics = self.metrics_calculator.calculate_all_metrics(
-                df, monthly_disposable_income
-            )
+            metrics = self.metrics_calculator.calculate_all_metrics(df)
             if not metrics:
                 logger.error("Could not calculate dashboard metrics. Skipping update.")
                 return None
