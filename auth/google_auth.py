@@ -69,14 +69,13 @@ class GoogleAuthenticator:
                 token.write(self._creds.to_json())
         return self._creds
 
-    def get_gmail_service(self):
+    def get_gmail_client(self):
         """Builds and returns the Gmail service client."""
         creds = self.get_creds()
         if not creds:
             return None
         try:
             service = build("gmail", "v1", credentials=creds)
-            logger.info("Gmail service client built successfully.")
             return service
         except HttpError as error:
             logger.error(f"An HTTP error occurred building the Gmail service: {error}")
@@ -89,11 +88,12 @@ class GoogleAuthenticator:
 
     def get_gspread_client(self):
         """Returns an authenticated gspread client for Google Sheets."""
+        creds = self.get_creds()
+        if not creds:
+            logger.error("Could not get credentials for gspread client.")
+            return None
         try:
-            # gspread.oauth() manages its own authentication flow
-            # needs credentials.json file from Google Cloud in %APPDATA%/gspread
-            gc = gspread.oauth(scopes=self.scopes)
-            logger.info("gspread client authenticated via OAuth.")
+            gc = gspread.Client(auth=creds)
             return gc
         except Exception as e:
             logger.error(f"Failed to authenticate with gspread: {e}", exc_info=True)

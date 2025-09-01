@@ -1,6 +1,5 @@
 import pandas as pd
 from loguru import logger
-
 from services.google_sheets import GoogleSheetsService
 from data_processing.expense_data import ExpenseDataManager
 from analytics.dashboard_metrics import DashboardMetricsCalculator
@@ -8,9 +7,7 @@ import config
 
 
 class DashboardUpdater:
-    """
-    Manages updating the main budget dashboard in Google Sheets.
-    """
+    """Updates the budget dashboard in Google Sheets."""
 
     def __init__(
         self,
@@ -21,7 +18,7 @@ class DashboardUpdater:
         self.sheets_service = sheets_service
         self.expense_data_manager = expense_data_manager
         self.metrics_calculator = metrics_calculator
-        self.budget_ws = None  # Worksheet object for the budget sheet
+        self.budget_ws = sheets_service.get_worksheet(config.WORKSHEETS["budget"])
 
     def update_dashboard(self) -> dict | None:
         """
@@ -29,39 +26,22 @@ class DashboardUpdater:
         """
         logger.info("Starting dashboard update process...")
         try:
-            # 1. Get Budget Worksheet (still needed for formatting later)
-            # Reference config.BUDGET_WORKSHEET_NAME directly
-            self.budget_ws = self.sheets_service.get_worksheet(
-                config.BUDGET_WORKSHEET_NAME
-            )
-
-            # 2. Get Monthly Income using ExpenseDataManager
-            monthly_disposable_income = (
-                self.expense_data_manager.get_monthly_disposable_income()
-            )
-            if monthly_disposable_income == 0.0:
-                logger.error("Monthly disposable income is 0. Cannot update dashboard.")
-                return None
-
-            # 3. Load Expense Data
+            # Load Expense Data
             df = self.expense_data_manager.load_expenses_dataframe()
             if df.empty:
                 logger.warning(
                     "No expense data available to update dashboard. Skipping update."
                 )
                 return None
-            # 4. Calculate all metrics - PASS THE INCOME HERE
-            metrics = self.metrics_calculator.calculate_all_metrics(
-                df, monthly_disposable_income
-            )
+            metrics = self.metrics_calculator.calculate_all_metrics(df)
             if not metrics:
                 logger.error("Could not calculate dashboard metrics. Skipping update.")
                 return None
 
             # Need to get category types records for prepare_category_and_type_data
-            # Reference config.CATEGORIES_WORKSHEET_NAME directly
+            # Reference config.WORKSHEETS["categories"] directly
             category_types_records = self.sheets_service.get_all_records(
-                config.CATEGORIES_WORKSHEET_NAME
+                config.WORKSHEETS["categories"]
             )
             category_data_for_sheet, needs_wants_data_for_sheet = (
                 self.metrics_calculator.prepare_category_and_type_data(
@@ -100,6 +80,14 @@ class DashboardUpdater:
             self.sheets_service.update_cells(
                 self.budget_ws, f"E{top_merchants_start_row}", top_spending_data
             )
+
+            if not df.empty:
+                # Get the latest transaction date from the source data
+                latest_transaction_date = df["Date"].max()
+                # Format it as a string to store in the sheet
+                signature = f"Last Updated from Data as of: {latest_transaction_date.strftime('%Y-%m-%d %H:%M:%S')}"
+                # Write the signature to an out-of-the-way cell
+                self.sheets_service.update_cells(self.budget_ws, "A20", [[signature]])
 
             # 6. Apply Formatting (delegated to sheets_service)
             self.sheets_service.format_dashboard_sheet(

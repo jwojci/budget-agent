@@ -1,0 +1,10 @@
+services:
+  budget-bot:
+    build: .
+    container_name: my-budget-bot
+    env_file:
+      - .env
+    volumes:
+      - ./credentials.json:/app/credentials.json
+      - ./token.json:/app/token.json
+      - ./attachments:/app/attachments

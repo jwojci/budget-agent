@@ -3,9 +3,7 @@ import calendar
 
 import pandas as pd
 from loguru import logger
-from services.google_sheets import GoogleSheetsService  # For fetching income
-
-import config
+from data_processing.expense_data import ExpenseDataManager
 
 
 class DashboardMetricsCalculator:
@@ -13,21 +11,20 @@ class DashboardMetricsCalculator:
     Calculates various financial metrics for the budget dashboard.
     """
 
-    def __init__(self, sheets_service: GoogleSheetsService):
-        self.sheets_service = sheets_service
+    def __init__(self, expense_data_manager: ExpenseDataManager):
+        self.expense_data_manager = expense_data_manager
 
-    def calculate_all_metrics(
-        self, df: pd.DataFrame, monthly_disposable_income: float
-    ) -> dict:
+    def calculate_all_metrics(self, df: pd.DataFrame) -> dict:
         """
         Calculates all primary budget and spending metrics for the dashboard.
         Assumes df is already cleaned with 'Date' as datetime and 'Expense' as numeric.
         """
+        monthly_disposable_income = (
+            self.expense_data_manager.get_monthly_disposable_income()
+        )
         if monthly_disposable_income == 0.0:
-            logger.warning(
-                "Monthly disposable income is 0. Cannot calculate budget metrics."
-            )
-            return {}  # Return an empty dict if income is not set
+            logger.warning("Monthly disposable income is 0.")
+            return {}
 
         today = datetime.datetime.now()
         day_of_month = today.day
