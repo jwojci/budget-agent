@@ -1,7 +1,3 @@
-"""
-Manages sending messages to Telegram.
-"""
-
 from loguru import logger
 import telegram
 from telegram.error import BadRequest

@@ -1,9 +1,3 @@
-"""
-Google Sheets service module for interacting with spreadsheets using gspread.
-
-Provides methods for accessing, updating, and formatting Google Sheets.
-"""
-
 from loguru import logger
 import gspread
 from gspread_formatting import (

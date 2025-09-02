@@ -1,4 +1,3 @@
-import pandas as pd
 from loguru import logger
 from services.google_sheets import GoogleSheetsService
 from data_processing.expense_data import ExpenseDataManager

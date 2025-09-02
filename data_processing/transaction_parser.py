@@ -1,6 +1,3 @@
-import os
-import re
-
 from loguru import logger
 
 from .parsers.mbank_parser import MBankParser

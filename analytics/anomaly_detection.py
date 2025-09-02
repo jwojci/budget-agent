@@ -1,7 +1,6 @@
 import datetime
 
 from loguru import logger
-import pandas as pd
 from data_processing.expense_data import ExpenseDataManager
 
 import config

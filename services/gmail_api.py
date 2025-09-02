@@ -1,7 +1,6 @@
 import os
 import base64
 import datetime
-import re
 
 from loguru import logger
 from googleapiclient.errors import HttpError

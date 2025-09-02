@@ -5,6 +5,10 @@ import pandas as pd
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 
+from data_processing.expense_data import ExpenseDataManager
+from services.google_sheets import GoogleSheetsService
+from analytics.dashboard_metrics import DashboardMetricsCalculator
+
 
 class Filter(BaseModel):
     """Model for filtering DataFrame."""
@@ -31,25 +35,26 @@ class FilteredAggregatedDataInput(BaseModel):
 
 def create_agent_tools(app_context):
     """Creates and configures agent tools."""
-    expense_data = app_context["expense_data_manager"]
-    sheets = app_context["sheets_service"]
-    metrics = app_context["metrics_calculator"]
+    expense_data: ExpenseDataManager | None = app_context["expense_data_manager"]
+    sheets: GoogleSheetsService | None = app_context["sheets_service"]
+    metrics: DashboardMetricsCalculator | None = app_context["metrics_calculator"]
 
     @tool
     def get_dashboard_summary() -> str:
         """Returns a summary of budget status."""
-        df = expense_data.load_expenses_dataframe()
-        income = expense_data.get_monthly_disposable_income()
-        metrics_data = metrics.calculate_all_metrics(df, income)
-
-        if not metrics_data:
-            return "Could not calculate budget summary."
-
-        return (
-            f"Weekly Remaining: {metrics_data['remaining_weekly_target']:.2f} PLN\n"
-            f"Daily Safe to Spend: {metrics_data['safe_to_spend_today']:.2f} PLN\n"
-            f"Monthly Savings: {metrics_data['bonus_savings']:.2f} PLN"
-        )
+        try:
+            df = expense_data.load_expenses_dataframe()
+            metrics_data = metrics.calculate_all_metrics(df)
+            print(type(metrics), type(expense_data))
+            if not metrics_data:
+                return "Could not calculate budget summary."
+            return (
+                f"Weekly Remaining: {metrics_data['remaining_weekly_target']:.2f} PLN\n"
+                f"Daily Safe to Spend: {metrics_data['safe_to_spend_today']:.2f} PLN\n"
+                f"Monthly Savings: {metrics_data['bonus_savings']:.2f} PLN"
+            )
+        except Exception as e:
+            print(f"Error during getting dashboard summary: {e}")
 
     @tool
     def categorize_merchant(merchant_name: str, category: str, type: str) -> str:
@@ -182,10 +187,60 @@ def create_agent_tools(app_context):
         except Exception as e:
             return f"Error calculating average: {e}"
 
+    @tool
+    def get_monthly_spending_summary(year: int, month: int) -> str:
+        """
+        Provides a summary of spending for a specific month and year.
+        Returns total spending, top category, and top 5 merchants for that month.
+        """
+        try:
+            df = expense_data.load_expenses_dataframe()
+            if df.empty:
+                return "No spending data available."
+
+            df_month = df[
+                (df["Date"].dt.year == year) & (df["Date"].dt.month == month)
+            ].copy()
+
+            if df_month.empty:
+                return f"No spending data found for {year}-{month:02d}."
+            # Only consider expenses, not income
+            df_month_expenses = df_month[df_month["Expense"] > 0]
+            if df_month_expenses.empty:
+                return f"No expenses (only income or transfers) recorded for {year}-{month:02d}."
+
+            total_spent = df_month_expenses["Expense"].sum()
+            top_category = (
+                df_month_expenses.groupby("Category")["Expense"].sum().idxmax()
+            )
+
+            top_merchants = (
+                df_month_expenses.groupby("Description")["Expense"]
+                .sum()
+                .nlargest(5)
+                .reset_index()
+            )
+            top_merchants_str = "\n".join(
+                [
+                    f"-{row['Description']}: {row['Expense']:.2f} PLN"
+                    for _, row in top_merchants.iterrows()
+                ]
+            )
+
+            return (
+                f"Spending Summary for {year}-{month:02d}:\n"
+                f"***Total Spent***: {total_spent:.2f} PLN\n"
+                f"***Top Category***: {top_category}\n\n"
+                f"***Top 5 Merchants***:\n{top_merchants_str}"
+            )
+        except Exception as e:
+            return f"Error generating monthly summary: {e}"
+
     return [
         get_dashboard_summary,
         categorize_merchant,
         get_weekly_spending_data,
         get_filtered_aggregated_data,
         calculate_average_weekly_spending,
+        get_monthly_spending_summary,
     ]
