@@ -10,4 +10,4 @@ COPY . .
 
 RUN mkdir -p /app/attachments
 
-CMD ["python", "bot_runner.py"]
+CMD ["python", "main.py"]
